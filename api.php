@@ -198,6 +198,59 @@ switch ($action) {
         break;
 
     //
+    // APPUNTAMENTI
+    //
+    case 'get_appuntamenti':
+        $stmt = $pdo->prepare(
+        "SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.NOTE,
+                c.NOME, c.COGNOME
+        FROM APPUNTAMENTI a
+        JOIN CLIENTI c ON a.ID_CLIENTE = c.ID_CLIENTE
+        WHERE a.DATA_ORA >= NOW()
+        ORDER BY a.DATA_ORA ASC"
+        );
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['success'=>true, 'data'=>$rows]);
+        break;
+
+    case 'insert_appuntamento':
+        $stmt = $pdo->prepare(
+        "INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, NOTE)
+        VALUES (?, ?, ?)"
+        );
+        $stmt->execute([
+        $_POST['clientId'],
+        $_POST['datetime'],
+        $_POST['note'] ?: null
+        ]);
+        echo json_encode(['success'=>true, 'insertId'=>$pdo->lastInsertId()]);
+        break;
+
+    case 'update_appuntamento':
+        $stmt = $pdo->prepare(
+        "UPDATE APPUNTAMENTI
+            SET ID_CLIENTE = ?, DATA_ORA = ?, NOTE = ?
+        WHERE ID_APPUNTAMENTO = ?"
+        );
+        $stmt->execute([
+        $_POST['clientId'],
+        $_POST['datetime'],
+        $_POST['note'] ?: null,
+        $_POST['id']
+        ]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    case 'delete_appuntamento':
+        $stmt = $pdo->prepare(
+        "DELETE FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO = ?"
+        );
+        $stmt->execute([$_POST['id']]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    //
     // SCHEDA_ESERCIZI
     //
     case 'get_scheda':
