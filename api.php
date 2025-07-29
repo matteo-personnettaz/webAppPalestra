@@ -355,81 +355,127 @@ switch ($action) {
         }
         break;
 
-    //
-    // SCHEDA_ESERCIZI
-    //
-    case 'get_scheda':
-        try {
-            $stmt = $pdo->prepare(
-                'SELECT * FROM SCHEDE_ESERCIZI WHERE ID_CLIENTE = ? ORDER BY ID_SCHEDE DESC'
-            );
-            $stmt->execute([(int)$_POST['clientId']]);
-            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            echo json_encode(['success' => true, 'data' => $data]);
-        } catch (PDOException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'success' => false,
-                'error'   => 'DB error: ' . $e->getMessage()
-            ]);
-            exit;
-        }
+    ///
+    // SCHEDE ESERCIZI
+    ///
+
+    // 1) Legge tutte le schede (testa)
+    case 'get_schede_testa':
+        $stmt = $pdo->prepare("
+        SELECT s.ID_SCHEDAT, s.ID_CLIENTE, s.DATA_INIZIO, s.NUM_SETIMANE, s.GIORNI_A_SET, s.NOTE,
+                c.NOME, c.COGNOME
+            FROM SCHEDE_ESERCIZI_TESTA s
+            JOIN CLIENTI c ON s.ID_CLIENTE = c.ID_CLIENTE
+        ORDER BY s.DATA_INIZIO DESC
+        ");
+        $stmt->execute();
+        echo json_encode(['success'=>true, 'data'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
         break;
 
-    case 'insert_scheda':
-        try {
-            $stmt = $pdo->prepare('INSERT INTO SCHEDE_ESERCIZI (ID_CLIENTE, ID_ESERCIZIO, RIPETIZIONI, PESO, SERIE, REST, DATA_FINE) VALUES (?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([
-                (int)$_POST['clientId'],
-                (int)$_POST['esercizioId'],
-                (int)$_POST['ripetizioni'],
-                (float)$_POST['peso'],
-                (int)$_POST['serie'],
-                (int)$_POST['rest'],
-                $_POST['dataFine'] ?: null,
-            ]);
-            echo json_encode(['success' => true, 'id' => $pdo->lastInsertId()]);
-        } catch (PDOException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'success' => false,
-                'error'   => 'DB error: ' . $e->getMessage()
-            ]);
-            exit;
-        }
+    // 2) Legge tutte le voci (dettagli) di una scheda
+    case 'get_voci_scheda':
+        $stmt = $pdo->prepare("
+        SELECT d.ID_SCHEDAD, d.ID_SCHEDAT, d.ID_ESERCIZIO, d.SETTIMANA, d.GIORNO,
+                d.SERIE, d.RIPETIZIONI, d.PESO, d.REST, d.NOTE,
+                e.SIGLA, e.NOME AS ES_NAME
+            FROM SCHEDE_ESERCIZI_DETTA d
+            JOIN ESERCIZI e ON d.ID_ESERCIZIO = e.ID_ESERCIZIO
+        WHERE d.ID_SCHEDAT = ?
+        ORDER BY d.SETTIMANA, d.GIORNO
+        ");
+        $stmt->execute([$_REQUEST['id_scheda']]);
+        echo json_encode(['success'=>true, 'data'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
         break;
 
-    case 'update_scheda':
-        try {
-            $stmt = $pdo->prepare('UPDATE SCHEDE_ESERCIZI SET RIPETIZIONI = ?, PESO = ?, SERIE = ?, REST = ?, DATA_FINE = ? WHERE ID_SCHEDE = ?');
-            $stmt->execute([
-                (int)$_POST['ripetizioni'],
-                (float)$_POST['peso'],
-                (int)$_POST['serie'],
-                (int)$_POST['rest'],
-                $_POST['dataFine'] ?: null,
-                (int)$_POST['id'],
-            ]);
-            echo json_encode(['success' => true]);
-        } catch (PDOException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'success' => false,
-                'error'   => 'DB error: ' . $e->getMessage()
-            ]);
-            exit;
-        }
+    // 3) Inserisce una nuova scheda (testa)
+    case 'insert_scheda_testa':
+        $stmt = $pdo->prepare("
+        INSERT INTO SCHEDE_ESERCIZI_TESTA
+            (ID_CLIENTE, DATA_INIZIO, NUM_SETIMANE, GIORNI_A_SET, NOTE)
+        VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+        $_POST['clientId'],
+        $_POST['dataInizio'],
+        $_POST['numSettimane'],
+        $_POST['giorniASet'],
+        $_POST['note'] ?? ''
+        ]);
+        echo json_encode(['success'=>true, 'insertId'=>$pdo->lastInsertId()]);
         break;
 
-    case 'delete_scheda':
-        $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
-        if ($id > 0) {
-            $stmt = $pdo->prepare('DELETE FROM SCHEDE_ESERCIZI WHERE ID_SCHEDE = ?');
-            $stmt->execute([$id]);
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['success' => false, 'error' => 'ID non valido']);
-        }
+    // 4) Aggiorna una scheda (testa)
+    case 'update_scheda_testa':
+        $stmt = $pdo->prepare("
+        UPDATE SCHEDE_ESERCIZI_TESTA
+            SET ID_CLIENTE=?, DATA_INIZIO=?, NUM_SETIMANE=?, GIORNI_A_SET=?, NOTE=?
+        WHERE ID_SCHEDAT=?
+        ");
+        $stmt->execute([
+        $_POST['clientId'],
+        $_POST['dataInizio'],
+        $_POST['numSettimane'],
+        $_POST['giorniASet'],
+        $_POST['note'] ?? '',
+        $_POST['id_scheda']
+        ]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    // 5) Elimina una scheda (testa) e le voci collegate
+    case 'delete_scheda_testa':
+        $stmt = $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_TESTA WHERE ID_SCHEDAT=?");
+        $stmt->execute([$_POST['id']]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    // 6) Inserisce una voce di scheda (dettaglio)
+    case 'insert_voce_scheda':
+        $stmt = $pdo->prepare("
+        INSERT INTO SCHEDE_ESERCIZI_DETTA
+            (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, NOTE)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+        $_POST['id_scheda'],
+        $_POST['id_esercizio'],
+        $_POST['settimana'],
+        $_POST['giorno'],
+        $_POST['serie'],
+        $_POST['ripetizioni'],
+        $_POST['peso'],
+        $_POST['rest'],
+        $_POST['note'] ?? ''
+        ]);
+        echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+        break;
+
+    // 7) Aggiorna una voce di scheda
+    case 'update_voce_scheda':
+        $stmt = $pdo->prepare("
+        UPDATE SCHEDE_ESERCIZI_DETTA
+            SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, NOTE=?
+        WHERE ID_SCHEDAD=?
+        ");
+        $stmt->execute([
+        $_POST['id_esercizio'],
+        $_POST['settimana'],
+        $_POST['giorno'],
+        $_POST['serie'],
+        $_POST['ripetizioni'],
+        $_POST['peso'],
+        $_POST['rest'],
+        $_POST['note'] ?? '',
+        $_POST['id_voce']
+        ]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    // 8) Elimina una voce di scheda
+    case 'delete_voce_scheda':
+        $stmt = $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAD=?");
+        $stmt->execute([$_POST['id_voce']]);
+        echo json_encode(['success'=>true]);
         break;
 
     default:
