@@ -285,7 +285,7 @@ switch ($action) {
                "SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.NOTE, c.NOME, c.COGNOME
                 FROM APPUNTAMENTI a
                 JOIN CLIENTI c ON a.ID_CLIENTE = c.ID_CLIENTE
-                WHERE a.DATA_ORA >= NOW()
+                -- WHERE a.DATA_ORA >= NOW()
                 ORDER BY a.DATA_ORA ASC"
             );
             $stmt->execute();
