@@ -146,10 +146,6 @@ switch ($action) {
                 $_POST['rightThigh'],
             ];
             $sql = 'INSERT INTO MISURAZIONI (ID_CLIENTE, DATA_MISURAZIONE, PESO, ALTEZZA, TORACE, VITA, FIANCHI, BRACCIO_SX, BRACCIO_DX, COSCIA_SX, COSCIA_DX) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-            foreach ($params as $p) {
-                $safe = $pdo->quote($p); // aggiunge gli apici e scappa i caratteri
-                $debugSql = preg_replace('/\?/', $safe, $debugSql, 1);
-            }
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
 
