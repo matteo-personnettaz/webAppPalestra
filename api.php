@@ -281,7 +281,7 @@ switch ($action) {
     //
     case 'get_tipo_appuntamento':
         try {
-            $stmt = $pdo->query('SELECT ID_AGGETTIVO as CODICE, DESCRIZIONE FROM REFERENZE_COMBO_0099 WHERE ID_CLASSE=\'TIPO_APPUNTAMENTO\' ORDER BY ORDINE');
+            $stmt = $pdo->query('SELECT ID_AGGETTIVO as CODICE, DESCRIZIONE FROM REFERENZECOMBO_0099 WHERE ID_CLASSE=\'TIPO_APPUNTAMENTO\' ORDER BY ORDINE');
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode(['success' => true, 'data' => $data]);
         } catch (PDOException $e) {
