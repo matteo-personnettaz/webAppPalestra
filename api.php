@@ -296,7 +296,7 @@ switch ($action) {
     case 'get_appuntamenti':
         try {
             $stmt = $pdo->prepare(
-               "SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA a.NOTE, c.NOME, c.COGNOME
+               "SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, c.NOME, c.COGNOME
                 FROM APPUNTAMENTI a
                 JOIN CLIENTI c ON a.ID_CLIENTE = c.ID_CLIENTE
                 -- WHERE a.DATA_ORA >= NOW()
