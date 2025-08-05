@@ -317,7 +317,7 @@ switch ($action) {
 
     case 'insert_appuntamento':
         try {
-            $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE) VALUES (?, ?, ?)");
+            $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE) VALUES (?, ?, ?, ?)");
             $stmt->execute([
                 $_POST['clientId'],
                 $_POST['datetime'],
