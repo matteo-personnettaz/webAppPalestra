@@ -296,7 +296,7 @@ switch ($action) {
     case 'get_appuntamenti':
         try {
             $stmt = $pdo->prepare(
-               "SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.NOTE, c.NOME, c.COGNOME
+               "SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA a.NOTE, c.NOME, c.COGNOME
                 FROM APPUNTAMENTI a
                 JOIN CLIENTI c ON a.ID_CLIENTE = c.ID_CLIENTE
                 -- WHERE a.DATA_ORA >= NOW()
@@ -317,10 +317,11 @@ switch ($action) {
 
     case 'insert_appuntamento':
         try {
-            $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, NOTE) VALUES (?, ?, ?)");
+            $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE) VALUES (?, ?, ?)");
             $stmt->execute([
                 $_POST['clientId'],
                 $_POST['datetime'],
+                $_POST['typeCode'],
                 $_POST['note'] ?: null
             ]);
             echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
@@ -336,10 +337,11 @@ switch ($action) {
 
     case 'update_appuntamento':
         try {
-            $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET ID_CLIENTE = ?, DATA_ORA = ?, NOTE = ? WHERE ID_APPUNTAMENTO = ?");
+            $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET ID_CLIENTE = ?, DATA_ORA = ?, TIPOLOGIA = ?, NOTE = ? WHERE ID_APPUNTAMENTO = ?");
             $stmt->execute([
                 $_POST['clientId'],
                 $_POST['datetime'],
+                $_POST['typeCode'],
                 $_POST['note'] ?: null,
                 $_POST['id']
             ]);
