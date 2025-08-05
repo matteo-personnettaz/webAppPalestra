@@ -388,12 +388,12 @@ switch ($action) {
     case 'get_voci_scheda':
         $stmt = $pdo->prepare("
         SELECT d.ID_SCHEDAD, d.ID_SCHEDAT, d.ID_ESERCIZIO, d.SETTIMANA, d.GIORNO,
-                d.SERIE, d.RIPETIZIONI, d.PESO, d.REST, d.NOTE,
+                d.SERIE, d.RIPETIZIONI, d.PESO, d.REST, d.ORDINE, d.NOTE,
                 e.SIGLA, e.NOME AS ES_NAME
             FROM SCHEDE_ESERCIZI_DETTA d
             JOIN ESERCIZI e ON d.ID_ESERCIZIO = e.ID_ESERCIZIO
         WHERE d.ID_SCHEDAT = ?
-        ORDER BY d.SETTIMANA, d.GIORNO
+        ORDER BY d.SETTIMANA, d.GIORNO, d.ORDINE
         ");
         $stmt->execute([$_REQUEST['id_scheda']]);
         echo json_encode(['success'=>true, 'data'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
