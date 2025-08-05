@@ -445,7 +445,7 @@ switch ($action) {
     case 'insert_voce_scheda':
         $stmt = $pdo->prepare("
         INSERT INTO SCHEDE_ESERCIZI_DETTA
-            (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, NOTE)
+            (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
@@ -457,6 +457,7 @@ switch ($action) {
         $_POST['ripetizioni'],
         $_POST['peso'],
         $_POST['rest'],
+        $_POST['ordine'],
         $_POST['note'] ?? ''
         ]);
         echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
@@ -466,7 +467,7 @@ switch ($action) {
     case 'update_voce_scheda':
         $stmt = $pdo->prepare("
         UPDATE SCHEDE_ESERCIZI_DETTA
-            SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, NOTE=?
+            SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, ORDINE=?, NOTE=?
         WHERE ID_SCHEDAD=?
         ");
         $stmt->execute([
@@ -478,6 +479,7 @@ switch ($action) {
         $_POST['peso'],
         $_POST['rest'],
         $_POST['note'] ?? '',
+        $_POST['ordine'],
         $_POST['id_voce']
         ]);
         echo json_encode(['success'=>true]);
