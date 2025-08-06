@@ -478,8 +478,8 @@ switch ($action) {
         $_POST['ripetizioni'],
         $_POST['peso'],
         $_POST['rest'],
-        $_POST['note'] ?? '',
         $_POST['ordine'],
+        $_POST['note'] ?? '',
         $_POST['id_voce']
         ]);
         echo json_encode(['success'=>true]);
