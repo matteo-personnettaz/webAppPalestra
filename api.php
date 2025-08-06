@@ -446,7 +446,7 @@ switch ($action) {
         $stmt = $pdo->prepare("
         INSERT INTO SCHEDE_ESERCIZI_DETTA
             (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
         $_POST['id_schedat'],
@@ -458,7 +458,7 @@ switch ($action) {
         $_POST['peso'],
         $_POST['rest'],
         $_POST['ordine'],
-        $_POST['note'] ?? ''
+        $_POST['note'] ?? ' '
         ]);
         echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
         break;
