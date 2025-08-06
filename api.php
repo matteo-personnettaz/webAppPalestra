@@ -449,7 +449,7 @@ switch ($action) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
-        $_POST['id_scheda'],
+        $_POST['id_schedat'],
         $_POST['id_esercizio'],
         $_POST['settimana'],
         $_POST['giorno'],
