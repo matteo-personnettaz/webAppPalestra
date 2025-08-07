@@ -1,10 +1,13 @@
 # cloudbuild.yaml
 options:
   substitutionOption: ALLOW_LOOSE
+  # indispensables per build.service_account: mandiamo i log solo su Stackdriver
+  logging: CLOUD_LOGGING_ONLY
 
 substitutions:
   _REGION: "europe-west1"
   _SERVICE: "my-api"                # il nome del tuo servizio Cloud Run
+
 images:
   - "gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA"
 
@@ -18,7 +21,7 @@ steps:
         "."
       ]
 
-  # 2) Push dell’immagine (implicitamente fatto da Cloud Build grazie a `images:`)
+  # 2) (Push è gestito automaticamente grazie alla sezione `images:`)
 
   # 3) Deploy su Cloud Run
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
