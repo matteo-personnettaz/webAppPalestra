@@ -1,6 +1,0 @@
-# Ignora tutto, poi fai un include selettivo
-**
-!Dockerfile
-!**/*.php
-!infra/nginx.conf
-# …e ogni altra cartella/file che ti serve per il build
