@@ -1,16 +1,28 @@
-# usa un’immagine ufficiale PHP con Apache
-FROM php:8.1-apache
+# Use official PHP runtime
+FROM php:8.2-fpm-alpine
 
-# copia il tuo codice nell’host di Apache
-COPY . /var/www/html/
+# Install estensioni e composer
+RUN apk add --no-cache \
+    nginx \
+    supervisor \
+    libpng-dev \
+    libzip-dev \
+    oniguruma-dev \
+    zip \
+    unzip \
+  && docker-php-ext-install pdo pdo_mysql mbstring zip
 
-# (opzionale) abilita estensioni PDO/MySQL o PDO/Postgres come serve
-RUN docker-php-ext-install pdo pdo_mysql
+# Copia codice e imposta working dir
+WORKDIR /app
+COPY . /app
 
-# assegna permessi se serve
-RUN chown -R www-data:www-data /var/www/html
+# Installa Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+RUN composer install --no-dev --optimize-autoloader
 
-# espone la porta 80
-EXPOSE 80
+# Configura Nginx
+COPY infra/nginx.conf /etc/nginx/nginx.conf
 
-# comando di avvio è già apache2-foreground
+# Espone porta e avvia php-fpm + nginx
+EXPOSE 8080
+CMD ["sh", "-c", "php-fpm -D && nginx -g 'daemon off;'"]
