@@ -25,34 +25,20 @@
 # cloudbuild.yaml
 options:
   substitutionOption: ALLOW_LOOSE
-  default_logs_bucket_behavior: REGIONAL_USER_OWNED_BUCKET
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET  # <— camelCase, non underscore
 
 substitutions:
   _SERVICE: "webapppalestra"
   _REGION: "europe-west12"
 
 steps:
-  # 1) Costruisci l'immagine usando il Dockerfile
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "bash"
     args:
-      [
-        'build',
-        '-t', 'gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA',
-        '.'
-      ]
-
-  # 2) Push dell'immagine (gestito automaticamente perché hai messo `images:` sotto)
-images:
-  - 'gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA'
-
-  # 3) Deploy su Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
-    args:
-      - '-c'
+      - "-c"
       - |
         gcloud run deploy $_SERVICE \
-          --image gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA \
+          --source . \
           --region=$_REGION \
           --platform managed \
           --allow-unauthenticated
