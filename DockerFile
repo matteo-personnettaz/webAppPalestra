@@ -1,0 +1,26 @@
+# Dockerfile
+
+# 1) Usa PHP + Apache
+FROM php:8.1-apache
+
+# 2) Attiva rewrite (se ti serve)
+RUN a2enmod rewrite
+
+# 3) Setta la working dir e copia solo composer.json/lock
+WORKDIR /srv/app
+COPY composer.json composer.lock ./
+
+# 4) Installa Composer e le dipendenze
+RUN curl -sS https://getcomposer.org/installer | php \
+ && php composer.phar install --no-dev --optimize-autoloader
+
+# 5) Copia il resto del codice (incl. src/api.php)
+COPY src/ ./src/
+
+# 6) Configura Apache per servire la cartella src come document root
+RUN sed -i 's#DocumentRoot /var/www/html#DocumentRoot /srv/app/src#' \
+    /etc/apache2/sites-available/000-default.conf
+
+# 7) Esponi porta e avvia Apache
+EXPOSE 8080
+CMD ["apache2-foreground"]
