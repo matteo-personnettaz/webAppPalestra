@@ -1,7 +1,7 @@
 # cloudbuild.yaml
 options:
   substitutionOption: ALLOW_LOOSE
-  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  logging: CLOUD_LOGGING_ONLY
 
 substitutions:
   _REGION: "europe-west1"
@@ -11,6 +11,7 @@ images:
   - "gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA"
 
 steps:
+  # 1) Costruisci l’immagine
   - name: "gcr.io/cloud-builders/docker"
     args:
       [
@@ -19,6 +20,7 @@ steps:
         "."
       ]
 
+  # 2) Deploy su Cloud Run
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
     args:
