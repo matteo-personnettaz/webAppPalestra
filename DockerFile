@@ -16,6 +16,9 @@ COPY src/ /var/www/html/
 # (opzionale) se hai file extra in root, copia anche quelli:
 COPY api.php /var/www/html/api.php
 
+# copia anche index.php dalla root del repo
+COPY index.php /var/www/html/index.php
+
 
 # Esponi la porta (anche se non è strettamente necessaria)
 EXPOSE ${PORT}
