@@ -2,30 +2,41 @@
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
 
-// 🔧 Connessione al DB
+// 🔧 Leggi le variabili d’ambiente per Cloud SQL
+$connectionName = getenv('CLOUD_SQL_CONNECTION_NAME'); // es. "cloud-palestra-athena:us-east1:fitness-manager"
+$dbUser           = getenv('DB_USER');                   // es. "palestra_athena"
+$dbPass           = getenv('DB_PASS');                   // es. "P@lestra_Athena25"
+$dbName           = getenv('DB_NAME');                   // es. "fitness_db"
+
+// 🔧 Connessione al DB via UNIX socket
 try {
-    $pdo = new PDO(
-        'mysql:host=tramway.proxy.rlwy.net;port=26938;dbname=fitness_manager;charset=utf8mb4',
-        'root',
-        'ogaXsYuCcJxFayZJnObpbUhYKYclYeOQ',
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    $socketDir = '/cloudsql';
+    $dsn = sprintf(
+      'mysql:unix_socket=%s/%s;dbname=%s;charset=utf8mb4',
+      $socketDir,
+      $connectionName,
+      $dbName
     );
-    //mysql -h tramway.proxy.rlwy.net -u root -p ogaXsYuCcJxFayZJnObpbUhYKYclYeOQ --port 26938 --protocol=TCP railway
+    $pdo = new PDO(
+      $dsn,
+      $dbUser,
+      $dbPass,
+      [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Connessione fallita: ' . $e->getMessage()]);
     exit;
 }
+
 // 🔑 Chiave API
 define('API_KEY', '9390f9115c45f1338b17949e3e39f94fd9afcbd414c07fd2a2e906ffd22469e8');
-
 $apiKey = $_POST['key'] ?? $_GET['key'] ?? '';
 if ($apiKey !== API_KEY) {
     http_response_code(403);
     echo json_encode(['error' => 'Chiave API non valida']);
     exit;
 }
-
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
