@@ -1,9 +1,20 @@
 FROM php:8.1-apache
+
 # Installa estensioni PDO MySQL, cURL, ecc.
 RUN docker-php-ext-install pdo_mysql && a2enmod rewrite
-# Copia il tuo API
+
+# Usa la porta definita da Cloud Run (scritto in $PORT, default 8080)
+ENV PORT 8080
+
+# Modifica la configurazione di Apache per ascoltare sulla porta $PORT
+RUN sed -ri "s/Listen 80/Listen ${PORT}/g" /etc/apache2/ports.conf \
+ && sed -ri "s/:80/:${PORT}/g" /etc/apache2/sites-available/*.conf
+
+# Copia i sorgenti della tua API sotto /var/www/html
 COPY src/ /var/www/html/
-# Espone la porta 8080
-EXPOSE 8080
-# Comando di avvio (Apache già preconfigurato)
+
+# Esponi la porta (anche se non è strettamente necessaria)
+EXPOSE ${PORT}
+
+# Avvia Apache
 CMD ["apache2-foreground"]
