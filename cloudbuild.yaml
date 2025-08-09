@@ -49,6 +49,13 @@ substitutions:
   _INSTANCE: "cloud-palestra-athena:us-east1:fitness-manager"
 
 steps:
+    # Step di test: comando inesistente per forzare fallimento
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - "echo 'Simulazione errore build'; exit 1"
+
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
     args:
