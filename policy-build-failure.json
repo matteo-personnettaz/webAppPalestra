@@ -1,0 +1,21 @@
+{
+  "displayName": "Alert: Cloud Build Failure (Log-based)",
+  "enabled": true,
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Cloud Build Error Logs",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"build\" AND logName:\"/logs/cloudbuild\" AND severity>=ERROR"
+      }
+    }
+  ],
+  "notificationChannels": [
+    "projects/cloud-palestra-athena/notificationChannels/3974421470222764039"
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "300s"
+    }
+  }
+}
