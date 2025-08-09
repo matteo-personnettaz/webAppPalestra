@@ -1,0 +1,16 @@
+{
+  "displayName": "Alert: Cloud Build Failed",
+  "enabled": true,
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Cloud Build Failure Condition",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"build\" AND jsonPayload.status=\"FAILURE\""
+      }
+    }
+  ],
+  "notificationChannels": [
+    "projects/cloud-palestra-athena/notificationChannels/3974421470222764039"
+  ]
+}
