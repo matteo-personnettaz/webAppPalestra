@@ -1,21 +1,18 @@
 {
-  "displayName": "Alert: Cloud Build Failure",
-  "combiner": "OR",
+  "displayName": "Alert: Cloud Build Failure (Log-based)",
   "enabled": true,
+  "combiner": "OR",
   "conditions": [
     {
-      "displayName": "Cloud Build Failure Condition",
+      "displayName": "Cloud Build Error Logs",
       "conditionMatchedLog": {
-        "filter": "resource.type=\"build\" AND logName:\"cloud-build\" AND textPayload:(\"FAILURE\" OR \"ERROR\")"
+        "filter": "resource.type=\"build\" AND logName:\"/logs/cloudbuild\" AND severity>=ERROR",
+        "labelExtractors": {},
+        "duration": "0s"
       }
     }
   ],
   "notificationChannels": [
     "projects/cloud-palestra-athena/notificationChannels/3974421470222764039"
-  ],
-  "alertStrategy": {
-    "notificationRateLimit": {
-      "period": "300s"
-    }
-  }
+  ]
 }
