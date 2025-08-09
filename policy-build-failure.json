@@ -6,7 +6,7 @@
     {
       "displayName": "Cloud Build Failure Condition",
       "conditionMatchedLog": {
-        "filter": "resource.type=\"build\" AND severity=\"ERROR\"",
+        "filter": "resource.type=\"build\" AND severity=\"ERROR\" AND textPayload:\"FAILED\"",
         "labelExtractors": {},
         "resourceNames": []
       }
@@ -18,6 +18,13 @@
   "alertStrategy": {
     "notificationRateLimit": {
       "period": "300s"
-    }
+    },
+    "notificationChannelStrategy": [
+      {
+        "notificationChannelNames": [
+          "projects/cloud-palestra-athena/notificationChannels/3974421470222764039"
+        ]
+      }
+    ]
   }
 }
