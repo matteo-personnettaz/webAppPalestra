@@ -6,7 +6,7 @@ header('Content-Type: application/json');
 $connectionName = getenv('CLOUD_SQL_CONNECTION_NAME'); // es. "cloud-palestra-athena:us-east1:fitness-manager"
 $dbUser           = getenv('DB_USER');                   // es. "palestra_athena"
 $dbPass           = getenv('DB_PASS');                   // es. "P@lestra_Athena25"
-$dbName           = getenv('DB_NAME');                   // es. "fitness_db"
+$dbName           = getenv('DB_NAME');                   // es. "fitness_db" 
 
 // 🔧 Connessione al DB via UNIX socket
 try {
