@@ -1,12 +1,14 @@
 {
-  "displayName": "Alert: Cloud Build Failure (Log-based)",
-  "enabled": true,
+  "displayName": "Alert: Cloud Build Failure",
   "combiner": "OR",
+  "enabled": true,
   "conditions": [
     {
-      "displayName": "Cloud Build Error Logs",
+      "displayName": "Cloud Build Failure Condition",
       "conditionMatchedLog": {
-        "filter": "resource.type=\"build\" AND logName:\"/logs/cloudbuild\" AND severity>=ERROR"
+        "filter": "resource.type=\"build\" AND severity=\"ERROR\"",
+        "labelExtractors": {},
+        "resourceNames": []
       }
     }
   ],
