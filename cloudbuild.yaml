@@ -38,9 +38,15 @@
 
 # timeout: "1200s"
 
-
 options:
+  substitutionOption: ALLOW_LOOSE
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+
+# valori di default, sovrascrivibili dal trigger
+substitutions:
+  _SERVICE: "webapppalestra"
+  _REGION: "us-east1"
+  _INSTANCE: "cloud-palestra-athena:us-east1:fitness-manager"
 
 steps:
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
@@ -48,11 +54,12 @@ steps:
     args:
       - "-c"
       - |
-        gcloud run deploy webapppalestra \
+        gcloud run deploy $_SERVICE \
           --source . \
-          --region us-east1 \
+          --region $_REGION \
           --platform managed \
           --allow-unauthenticated \
-          --add-cloudsql-instances cloud-palestra-athena:us-east1:fitness-manager \
-          --set-env-vars CLOUD_SQL_CONNECTION_NAME=cloud-palestra-athena:us-east1:fitness-manager,DB_HOST=/cloudsql/cloud-palestra-athena:us-east1:fitness-manager,DB_NAME=fitness_db,DB_USER=palestra_athena,DB_PASS=P@lestra_Athena25
+          --add-cloudsql-instances $_INSTANCE \
+          --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_HOST=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena,DB_PASS=P@lestra_Athena25
+
 timeout: "1200s"
