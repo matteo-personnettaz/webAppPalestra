@@ -7,8 +7,7 @@
       "displayName": "Cloud Build Error Logs",
       "conditionMatchedLog": {
         "filter": "resource.type=\"build\" AND logName:\"/logs/cloudbuild\" AND severity>=ERROR",
-        "labelExtractors": {},
-        "duration": "0s"
+        "labelExtractors": {}
       }
     }
   ],
