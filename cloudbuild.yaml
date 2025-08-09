@@ -3,10 +3,6 @@ options:
   # se vuoi gestire i log in un bucket regionale di tua proprietà:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
 
-substitutions:
-  _SERVICE: "webapppalestra"
-  _REGION: "europe-west1"
-
 steps:
   # 1) Costruisci l’immagine dal Dockerfile
   - name: "gcr.io/cloud-builders/docker"
@@ -24,15 +20,15 @@ steps:
     args:
       - "-c"
       - |
-        gcloud run deploy $_SERVICE \
-          --image gcr.io/$PROJECT_ID/$SERVICE:$COMMIT_SHA \
-          --region=$_REGION \
+        gcloud run deploy webapppalestra \
+          --image gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA \
+          --region=us-east1 \
           --platform=managed \
           --allow-unauthenticated \
           --add-cloudsql-instances cloud-palestra-athena:europe-west1:fitness-db
 
 # Indica quali immagini caricare nel registry
 images:
-  - "gcr.io/$PROJECT_ID/$SERVICE:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA"
 
 timeout: "1200s"
