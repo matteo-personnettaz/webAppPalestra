@@ -36,7 +36,7 @@
 # images:
 #   - "gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA"
 
-# timeout: "1200s"
+# timeout: "1200s" 
 
 options:
   substitutionOption: ALLOW_LOOSE
