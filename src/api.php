@@ -2,42 +2,27 @@
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
 
-$connectionName = getenv('CLOUD_SQL_CONNECTION_NAME'); // es. cloud-palestra-athena:us-east1:fitness-manager
-$dbName = getenv('DB_NAME') ?: 'fitness_db';
-$dbUser = getenv('DB_USER') ?: 'root';
-$dbPass = getenv('DB_PASS') ?: '';
+$dbSocket = getenv('DB_HOST'); // /cloudsql/project:region:instance
+$dbName   = getenv('DB_NAME');
+$dbUser   = getenv('DB_USER');
+$dbPass   = getenv('DB_PASS');
 
-$dsn = sprintf(
-    'mysql:unix_socket=/cloudsql/%s;dbname=%s;charset=utf8mb4',
-    $connectionName,
-    $dbName
-);
+$dsn = sprintf('mysql:unix_socket=%s;dbname=%s;charset=utf8mb4', $dbSocket, $dbName);
 
 try {
-    $pdo = new PDO(
-        $dsn,
-        $dbUser,
-        $dbPass,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_PERSISTENT => false,
-            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
-        ]
-    );
+    $pdo = new PDO($dsn, $dbUser, $dbPass, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_TIMEOUT            => 5,        // opzionale
+        PDO::ATTR_PERSISTENT         => false,    // meglio no su Cloud Run
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+00:00'"
+    ]);
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Connessione fallita: ' . $e->getMessage()]);
     exit;
 }
 
-// 🔑 Chiave API
-define('API_KEY', '9390f9115c45f1338b17949e3e39f94fd9afcbd414c07fd2a2e906ffd22469e8');
-$apiKey = $_POST['key'] ?? $_GET['key'] ?? '';
-if ($apiKey !== API_KEY) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Chiave API non valida']);
-    exit;
-}
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
