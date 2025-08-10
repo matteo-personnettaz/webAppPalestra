@@ -2,26 +2,27 @@
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
 
-// 🔧 Leggi le variabili d’ambiente per Cloud SQL
-$connectionName = getenv('CLOUD_SQL_CONNECTION_NAME'); // es. "cloud-palestra-athena:us-east1:fitness-manager"
-$dbUser           = getenv('DB_USER');                   // es. "palestra_athena"
-$dbPass           = getenv('DB_PASS');                   // es. "P@lestra_Athena25"
-$dbName           = getenv('DB_NAME');                   // es. "fitness_db" 
+$connectionName = getenv('CLOUD_SQL_CONNECTION_NAME'); // es. cloud-palestra-athena:us-east1:fitness-manager
+$dbName = getenv('DB_NAME') ?: 'fitness_db';
+$dbUser = getenv('DB_USER') ?: 'root';
+$dbPass = getenv('DB_PASS') ?: '';
 
-// 🔧 Connessione al DB via UNIX socket
+$dsn = sprintf(
+    'mysql:unix_socket=/cloudsql/%s;dbname=%s;charset=utf8mb4',
+    $connectionName,
+    $dbName
+);
+
 try {
-    $socketDir = '/cloudsql';
-    $dsn = sprintf(
-      'mysql:unix_socket=%s/%s;dbname=%s;charset=utf8mb4',
-      $socketDir,
-      $connectionName,
-      $dbName
-    );
     $pdo = new PDO(
-      $dsn,
-      $dbUser,
-      $dbPass,
-      [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        $dsn,
+        $dbUser,
+        $dbPass,
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_PERSISTENT => false,
+            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+        ]
     );
 } catch (PDOException $e) {
     http_response_code(500);
