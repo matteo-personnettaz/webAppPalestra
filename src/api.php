@@ -2,27 +2,32 @@
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
 
-$dbSocket = getenv('DB_HOST'); // /cloudsql/project:region:instance
-$dbName   = getenv('DB_NAME');
-$dbUser   = getenv('DB_USER');
-$dbPass   = getenv('DB_PASS');
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
 
-$dsn = sprintf('mysql:unix_socket=%s;dbname=%s;charset=utf8mb4', $dbSocket, $dbName);
-
-try {
-    $pdo = new PDO($dsn, $dbUser, $dbPass, [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_TIMEOUT            => 5,        // opzionale
-        PDO::ATTR_PERSISTENT         => false,    // meglio no su Cloud Run
-        PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+00:00'"
-    ]);
-} catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Connessione fallita: ' . $e->getMessage()]);
-    exit;
+if ($action === 'ping') {
+  echo json_encode(['success' => true, 'message' => 'pong']);
+  exit;
 }
 
+// === DB via socket + env ===
+$DB_HOST = getenv('DB_HOST') ?: '';
+$DB_NAME = getenv('DB_NAME') ?: '';
+$DB_USER = getenv('DB_USER') ?: '';
+$DB_PASS = getenv('DB_PASS') ?: '';
+
+try {
+  // usa il socket: host=localhost; unix_socket => /cloudsql/....
+  $pdo = new PDO(
+    "mysql:host=localhost;unix_socket={$DB_HOST};dbname={$DB_NAME};charset=utf8mb4",
+    $DB_USER,
+    $DB_PASS,
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+  );
+  echo json_encode(['success' => true, 'db' => 'connected']);
+} catch (PDOException $e) {
+  http_response_code(500);
+  echo json_encode(['error' => 'Connessione fallita: ' . $e->getMessage()]);
+}
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
