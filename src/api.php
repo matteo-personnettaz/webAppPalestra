@@ -4,6 +4,16 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Content-Type: application/json');
+
+if (($_GET['action'] ?? $_POST['action'] ?? '') === 'whoami') {
+  echo json_encode([
+    'ok' => true,
+    'rev' => getenv('K_REVISION') ?: 'n/a',
+    'has_socket' => getenv('DB_SOCKET') ?: 'n/a'
+  ]);
+  exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 // === API KEY ===
