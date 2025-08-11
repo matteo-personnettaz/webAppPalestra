@@ -1,8 +1,0 @@
-{
-    "name": "matteopersonnettaz/palestra-athena-api",
-    "require": {
-        "php": ">=7.4",
-        "kreait/firebase-php": "^7.21",
-        "kreait/firebase-tokens": "^5.2"
-    }
-}
