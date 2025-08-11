@@ -309,13 +309,13 @@ try {
         // opzionale: filtra per clientId se passato
         $clientId = $_GET['clientId'] ?? $_POST['clientId'] ?? null;
         if ($clientId) {
-          $stmt = $pdo->prepare("SELECT ID_SCHEDA, ID_CLIENTE, DATA_INIZIO, NUM_SETTIMANE, GIORNI_A_SET, NOTE
+          $stmt = $pdo->prepare("SELECT *
                                 FROM SCHEDE_TESTA
                                 WHERE ID_CLIENTE = ?
                                 ORDER BY ID_SCHEDA DESC");
           $stmt->execute([(int)$clientId]);
         } else {
-          $stmt = $pdo->query("SELECT ID_SCHEDA, ID_CLIENTE, DATA_INIZIO, NUM_SETTIMANE, GIORNI_A_SET, NOTE
+          $stmt = $pdo->query("SELECT *
                               FROM SCHEDE_TESTA
                               ORDER BY ID_SCHEDA DESC");
         }
@@ -350,7 +350,7 @@ try {
       try {
         $sql = "UPDATE SCHEDE_TESTA
                 SET ID_CLIENTE=?, DATA_INIZIO=?, NUM_SETTIMANE=?, GIORNI_A_SET=?, NOTE=?
-                WHERE ID_SCHEDA=?";
+                WHERE ID_SCHEDAT=?";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
           $_POST['clientId'] ?? null,
@@ -369,7 +369,7 @@ try {
 
     case 'delete_scheda_testa':
       try {
-        $stmt = $pdo->prepare("DELETE FROM SCHEDE_TESTA WHERE ID_SCHEDA=?");
+        $stmt = $pdo->prepare("DELETE FROM SCHEDE_TESTA WHERE ID_SCHEDAT=?");
         $stmt->execute([$_POST['id'] ?? 0]);
         echo json_encode(['success' => true]);
       } catch (PDOException $e) {
@@ -389,11 +389,10 @@ try {
           echo json_encode(['success' => false, 'error' => 'id_scheda mancante']);
           break;
         }
-        $stmt = $pdo->prepare("SELECT ID_VOCE, ID_SCHEDA, ID_ESERCIZIO, SETTIMANA, GIORNO,
-                                      SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE
-                                FROM VOCI_SCHEDA
-                                WHERE ID_SCHEDA = ?
-                                ORDER BY SETTIMANA ASC, GIORNO ASC, ORDINE ASC, ID_VOCE ASC");
+        $stmt = $pdo->prepare("SELECT *
+                                FROM SCHEDA_DETTA
+                                WHERE ID_SCHEDAT = ?
+                                ORDER BY SETTIMANA ASC, GIORNO ASC, ORDINE ASC, ID_SCHEDAD ASC");
         $stmt->execute([(int)$idScheda]);
         echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       } catch (PDOException $e) {
@@ -404,8 +403,8 @@ try {
 
     case 'insert_voce_scheda':
       try {
-        $sql = "INSERT INTO VOCI_SCHEDA
-                (ID_SCHEDA, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
+        $sql = "INSERT INTO SCHEDA_DETTA
+                (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
@@ -429,9 +428,9 @@ try {
 
     case 'update_voce_scheda':
       try {
-        $sql = "UPDATE VOCI_SCHEDA
+        $sql = "UPDATE SCHEDA_DETTA
                 SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, ORDINE=?, NOTE=?
-                WHERE ID_VOCE=?";
+                WHERE ID_SCHEDAD=?";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
           $_POST['id_esercizio'] ?? null,
@@ -454,7 +453,7 @@ try {
 
     case 'delete_voce_scheda':
       try {
-        $stmt = $pdo->prepare("DELETE FROM VOCI_SCHEDA WHERE ID_VOCE=?");
+        $stmt = $pdo->prepare("DELETE FROM SCHEDA_DETTA WHERE ID_SCHEDAD=?");
         $stmt->execute([$_POST['id_voce'] ?? 0]);
         echo json_encode(['success' => true]);
       } catch (PDOException $e) {
