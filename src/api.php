@@ -312,12 +312,12 @@ try {
           $stmt = $pdo->prepare("SELECT *
                                 FROM SCHEDE_TESTA
                                 WHERE ID_CLIENTE = ?
-                                ORDER BY ID_SCHEDA DESC");
+                                ORDER BY ID_SCHEDAT DESC");
           $stmt->execute([(int)$clientId]);
         } else {
           $stmt = $pdo->query("SELECT *
                               FROM SCHEDE_TESTA
-                              ORDER BY ID_SCHEDA DESC");
+                              ORDER BY ID_SCHEDAT DESC");
         }
         echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       } catch (PDOException $e) {
