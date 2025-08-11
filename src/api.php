@@ -301,6 +301,168 @@ try {
       echo json_encode(['success'=>true]);
       break;
 
+    // =========================
+    // SCHEDE (TESTA / PIANI)
+    // =========================
+    case 'get_schede_testa':
+      try {
+        // opzionale: filtra per clientId se passato
+        $clientId = $_GET['clientId'] ?? $_POST['clientId'] ?? null;
+        if ($clientId) {
+          $stmt = $pdo->prepare("SELECT ID_SCHEDA, ID_CLIENTE, DATA_INIZIO, NUM_SETTIMANE, GIORNI_A_SET, NOTE
+                                FROM SCHEDE_TESTA
+                                WHERE ID_CLIENTE = ?
+                                ORDER BY ID_SCHEDA DESC");
+          $stmt->execute([(int)$clientId]);
+        } else {
+          $stmt = $pdo->query("SELECT ID_SCHEDA, ID_CLIENTE, DATA_INIZIO, NUM_SETTIMANE, GIORNI_A_SET, NOTE
+                              FROM SCHEDE_TESTA
+                              ORDER BY ID_SCHEDA DESC");
+        }
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    case 'insert_scheda_testa':
+      try {
+        $sql = "INSERT INTO SCHEDE_TESTA (ID_CLIENTE, DATA_INIZIO, NUM_SETTIMANE, GIORNI_A_SET, NOTE)
+                VALUES (?, ?, ?, ?, ?)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+          $_POST['clientId'] ?? null,
+          // la tua app invia YYYY-MM-DD
+          $_POST['dataInizio'] ?? null,
+          $_POST['numSettimane'] ?? null,
+          $_POST['giorniASet'] ?? null,
+          ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
+        ]);
+        echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    case 'update_scheda_testa':
+      try {
+        $sql = "UPDATE SCHEDE_TESTA
+                SET ID_CLIENTE=?, DATA_INIZIO=?, NUM_SETTIMANE=?, GIORNI_A_SET=?, NOTE=?
+                WHERE ID_SCHEDA=?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+          $_POST['clientId'] ?? null,
+          $_POST['dataInizio'] ?? null,
+          $_POST['numSettimane'] ?? null,
+          $_POST['giorniASet'] ?? null,
+          ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
+          $_POST['id_scheda'] ?? null,
+        ]);
+        echo json_encode(['success' => true]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    case 'delete_scheda_testa':
+      try {
+        $stmt = $pdo->prepare("DELETE FROM SCHEDE_TESTA WHERE ID_SCHEDA=?");
+        $stmt->execute([$_POST['id'] ?? 0]);
+        echo json_encode(['success' => true]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    // ===================
+    // VOCI DI SCHEDA
+    // ===================
+    case 'get_voci_scheda':
+      try {
+        $idScheda = $_GET['id_scheda'] ?? $_POST['id_scheda'] ?? null;
+        if (!$idScheda) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'id_scheda mancante']);
+          break;
+        }
+        $stmt = $pdo->prepare("SELECT ID_VOCE, ID_SCHEDA, ID_ESERCIZIO, SETTIMANA, GIORNO,
+                                      SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE
+                                FROM VOCI_SCHEDA
+                                WHERE ID_SCHEDA = ?
+                                ORDER BY SETTIMANA ASC, GIORNO ASC, ORDINE ASC, ID_VOCE ASC");
+        $stmt->execute([(int)$idScheda]);
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    case 'insert_voce_scheda':
+      try {
+        $sql = "INSERT INTO VOCI_SCHEDA
+                (ID_SCHEDA, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+          $_POST['id_scheda'] ?? null,
+          $_POST['id_esercizio'] ?? null,
+          $_POST['settimana'] ?? null,
+          $_POST['giorno'] ?? null,
+          $_POST['serie'] ?? null,
+          $_POST['ripetizioni'] ?? null,
+          ($_POST['peso'] ?? '') !== '' ? $_POST['peso'] : null,
+          ($_POST['rest'] ?? '') !== '' ? $_POST['rest'] : null,
+          ($_POST['ordine'] ?? '') !== '' ? $_POST['ordine'] : null,
+          ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
+        ]);
+        echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    case 'update_voce_scheda':
+      try {
+        $sql = "UPDATE VOCI_SCHEDA
+                SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, ORDINE=?, NOTE=?
+                WHERE ID_VOCE=?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+          $_POST['id_esercizio'] ?? null,
+          $_POST['settimana'] ?? null,
+          $_POST['giorno'] ?? null,
+          $_POST['serie'] ?? null,
+          $_POST['ripetizioni'] ?? null,
+          ($_POST['peso'] ?? '') !== '' ? $_POST['peso'] : null,
+          ($_POST['rest'] ?? '') !== '' ? $_POST['rest'] : null,
+          ($_POST['ordine'] ?? '') !== '' ? $_POST['ordine'] : null,
+          ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
+          $_POST['id_voce'] ?? null,
+        ]);
+        echo json_encode(['success' => true]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
+    case 'delete_voce_scheda':
+      try {
+        $stmt = $pdo->prepare("DELETE FROM VOCI_SCHEDA WHERE ID_VOCE=?");
+        $stmt->execute([$_POST['id_voce'] ?? 0]);
+        echo json_encode(['success' => true]);
+      } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
+      }
+      break;
+
     default:
       echo json_encode(['success'=>false,'error'=>'Azione non riconosciuta: '.$action]);
   }
