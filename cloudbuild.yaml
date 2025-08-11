@@ -45,7 +45,7 @@ options:
 substitutions:
   _SERVICE: "webapppalestra"
   _REGION: "us-east1"
-  _INSTANCE: "cloud-palestra-athena:us-east1:fitness-manager"
+  _INSTANCE: "cloud-palestra-athena:us-east1:root"
 
 steps:
   # Build immagine dal Dockerfile
