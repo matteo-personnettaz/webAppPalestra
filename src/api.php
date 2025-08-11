@@ -390,7 +390,7 @@ try {
           break;
         }
         $stmt = $pdo->prepare("SELECT *
-                                FROM SCHEDA_DETTA
+                                FROM SCHEDE_DETTA
                                 WHERE ID_SCHEDAT = ?
                                 ORDER BY SETTIMANA ASC, GIORNO ASC, ORDINE ASC, ID_SCHEDAD ASC");
         $stmt->execute([(int)$idScheda]);
@@ -403,7 +403,7 @@ try {
 
     case 'insert_voce_scheda':
       try {
-        $sql = "INSERT INTO SCHEDA_DETTA
+        $sql = "INSERT INTO SCHEDE_DETTA
                 (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
@@ -428,7 +428,7 @@ try {
 
     case 'update_voce_scheda':
       try {
-        $sql = "UPDATE SCHEDA_DETTA
+        $sql = "UPDATE SCHEDE_DETTA
                 SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, ORDINE=?, NOTE=?
                 WHERE ID_SCHEDAD=?";
         $stmt = $pdo->prepare($sql);
@@ -453,7 +453,7 @@ try {
 
     case 'delete_voce_scheda':
       try {
-        $stmt = $pdo->prepare("DELETE FROM SCHEDA_DETTA WHERE ID_SCHEDAD=?");
+        $stmt = $pdo->prepare("DELETE FROM SCHEDE_DETTA WHERE ID_SCHEDAD=?");
         $stmt->execute([$_POST['id_voce'] ?? 0]);
         echo json_encode(['success' => true]);
       } catch (PDOException $e) {
