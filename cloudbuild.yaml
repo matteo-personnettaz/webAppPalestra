@@ -26,7 +26,8 @@ steps:
           --platform managed \
           --allow-unauthenticated \
           --add-cloudsql-instances $_INSTANCE \
-          --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_SOCKET=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena,DB_PASS=P@lestra_Athena25
+          --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_SOCKET=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena \
+          --set-secrets DB_PASS=db-pass:latest
 
 images:
   - "gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA"
