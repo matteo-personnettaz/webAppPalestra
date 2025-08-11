@@ -1,46 +1,5 @@
-# options:
-#   substitutionOption: ALLOW_LOOSE
-#   # se vuoi gestire i log in un bucket regionale di tua proprietà:
-#   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
-
-# substitutions:
-#   _SERVICE: "webapppalestra"
-#   _REGION: "us-east1"
-#   _INSTANCE: "cloud-palestra-athena:us-east1:fitness-manager"
-
-# steps:
-#   # 1) Costruisci l’immagine dal Dockerfile
-#   - name: "gcr.io/cloud-builders/docker"
-#     args:
-#       - "build"
-#       - "-t"
-#       - "gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA"
-#       - "."
-
-#   # 2) (implicit) il push dell’immagine è gestito da `images:` qui sotto
-
-#   # 3) Deploy su Cloud Run
-#   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-#     entrypoint: "bash"
-#     args:
-#       - "-c"
-#       - |
-#         gcloud run deploy $_SERVICE \
-#           --image gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA \
-#           --region=$_REGION \
-#           --platform=managed \
-#           --allow-unauthenticated \
-#           --add-cloudsql-instances $_INSTANCE
-
-# # Indica quali immagini caricare nel registry
-# images:
-#   - "gcr.io/$PROJECT_ID/webapppalestra:$COMMIT_SHA"
-
-# timeout: "1200s" 
-
 options:
   substitutionOption: ALLOW_LOOSE
-  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
 
 substitutions:
   _SERVICE: "webapppalestra"
@@ -48,11 +7,15 @@ substitutions:
   _INSTANCE: "cloud-palestra-athena:us-east1:root"
 
 steps:
-  # Build immagine dal Dockerfile
+  # 0) Build immagine con Dockerfile
   - name: "gcr.io/cloud-builders/docker"
     args: ["build","-t","gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA","."]
 
-  # Deploy su Cloud Run con socket Cloud SQL e ENV corrette
+  # 1) PUSH esplicito dell'immagine (necessario PRIMA del deploy)
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push","gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA"]
+
+  # 2) Deploy su Cloud Run
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
     args:
@@ -66,6 +29,7 @@ steps:
           --add-cloudsql-instances $_INSTANCE \
           --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_SOCKET=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena,DB_PASS=P@lestra_Athena25
 
+# (facoltativo) lasciarlo non fa male, ma ormai abbiamo fatto il push nello step 1
 images:
   - "gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA"
 
