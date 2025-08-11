@@ -15,7 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 header('Content-Type: application/json; charset=utf-8');
 
 /* ===== API KEY ===== */
-const API_KEY = '9390f9115c45f1338b17949e3e39f94fd9afcbd414c07fd2a2e906ffd22469e8';
+/*const API_KEY = '9390f9115c45f1338b17949e3e39f94fd9afcbd414c07fd2a2e906ffd22469e8';*/
+$API_KEY = getenv('API_KEY') ?: 'override_me_in_prod';
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $key    = $_GET['key']    ?? $_POST['key']    ?? '';
 
@@ -55,7 +56,7 @@ if ($action === 'socketcheck') {
 
 /* ===== Auth per le rotte che toccano il DB (tutte le altre) ===== */
 if (!in_array($action, ['ping','whoami','socketcheck'], true)) {
-  if ($key !== API_KEY) {
+  if ($key !== $API_KEY) {
     http_response_code(403);
     echo json_encode(['success'=>false,'error'=>'Chiave API non valida']); exit;
   }
