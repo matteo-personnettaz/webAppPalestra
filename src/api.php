@@ -462,6 +462,118 @@ try {
       }
       break;
 
+    /* === GRUPPI MUSCOLARI === */
+case 'get_gruppi_muscolari':
+  try {
+    $stmt = $pdo->prepare("
+      SELECT 
+        ID_AGGETTIVO AS code,
+        DESCRIZIONE  AS name,
+        IFNULL(COMMENTO,'') AS comment,
+        ORDINE       AS ordine
+      FROM REFERENZECOMBO_0099
+      WHERE ID_CLASSE='GRUPPO_MUSCOLARE'
+      ORDER BY ORDINE, DESCRIZIONE
+    ");
+    $stmt->execute();
+    echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+  } catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+  }
+  break;
+
+case 'insert_gruppo_muscolare':
+  try {
+    // Parametri attesi dal client
+    $code    = $_POST['code']    ?? null;          // es. DORSO (4-5 lettere)
+    $name    = $_POST['name']    ?? null;          // es. Dorsali
+    $comment = $_POST['comment'] ?? null;          // es. schiena alta e larga
+    $ordine  = $_POST['ordine']  ?? null;          // opzionale (int)
+
+    if (!$code || !$name) {
+      http_response_code(400);
+      echo json_encode(['success'=>false,'error'=>'Parametri code e name obbligatori']);
+      break;
+    }
+
+    // se non specificato, metti un ordine alto così va in coda
+    if ($ordine === null || $ordine === '') { $ordine = 999; }
+
+    $sql = "INSERT INTO REFERENZECOMBO_0099
+            (ID_CLASSE, ID_AGGETTIVO, DESCRIZIONE, COMMENTO, ORDINE)
+            VALUES ('GRUPPO_MUSCOLARE', ?, ?, ?, ?)";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$code, $name, ($comment !== '' ? $comment : null), (int)$ordine]);
+
+    echo json_encode(['success'=>true]);
+  } catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+  }
+  break;
+
+case 'update_gruppo_muscolare':
+  try {
+    $code    = $_POST['code']    ?? null;  // chiave (non si cambia)
+    $name    = $_POST['name']    ?? null;
+    $comment = $_POST['comment'] ?? null;
+
+    if (!$code || !$name) {
+      http_response_code(400);
+      echo json_encode(['success'=>false,'error'=>'Parametri code e name obbligatori']);
+      break;
+    }
+
+    $sql = "UPDATE REFERENZECOMBO_0099
+            SET DESCRIZIONE=?, COMMENTO=?
+            WHERE ID_CLASSE='GRUPPO_MUSCOLARE' AND ID_AGGETTIVO=?";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$name, ($comment !== '' ? $comment : null), $code]);
+
+    echo json_encode(['success'=>true]);
+  } catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+  }
+  break;
+
+case 'delete_gruppo_muscolare':
+  try {
+    $code = $_POST['code'] ?? null;
+    if (!$code) {
+      http_response_code(400);
+      echo json_encode(['success'=>false,'error'=>'Parametro code obbligatorio']);
+      break;
+    }
+
+    // Blocco eliminazione se ci sono esercizi che usano questo gruppo (coerente con UX)
+    $chk = $pdo->prepare("SELECT COUNT(*) AS c FROM ESERCIZI WHERE GRUPPO_MUSCOLARE = ?");
+    $chk->execute([$code]); // NB: se in ESERCIZI salvi il NOME, sostituisci qui con il nome
+    $row = $chk->fetch();
+    if ((int)($row['c'] ?? 0) > 0) {
+      http_response_code(409);
+      echo json_encode([
+        'success'=>false,
+        'error'=>"Impossibile eliminare: esistono esercizi collegati a '$code'."
+      ]);
+      break;
+    }
+
+    $stmt = $pdo->prepare("
+      DELETE FROM REFERENZECOMBO_0099 
+      WHERE ID_CLASSE='GRUPPO_MUSCOLARE' AND ID_AGGETTIVO=?
+    ");
+    $stmt->execute([$code]);
+
+    echo json_encode(['success'=>true]);
+  } catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+  }
+  break;
+
+
     default:
       echo json_encode(['success'=>false,'error'=>'Azione non riconosciuta: '.$action]);
   }
