@@ -27,8 +27,7 @@ steps:
           --allow-unauthenticated \
           --add-cloudsql-instances $_INSTANCE \
           --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_SOCKET=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena \
-          --set-secrets DB_PASS=db-pass:latest,API_KEY=api-key:latest \
-          --update-secrets FIREBASE_CREDENTIALS_PATH=firebase-admin-sa:latest:/var/www/html/secure/service-account.json
+          --set-secrets DB_PASS=db-pass:latest,API_KEY=api-key:latest,FIREBASE_CREDENTIALS_PATH=firebase-admin-sa:latest:/var/www/html/secure/service-account.json
 
 images:
   - "gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA"
