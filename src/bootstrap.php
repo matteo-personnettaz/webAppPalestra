@@ -11,8 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 /* ===== Composer ===== */
 require __DIR__ . '/../vendor/autoload.php';
 
-use Kreait\Firebase\Factory;
-
 /* ===== CONFIG DA ENV =====
    Valori impostati dal deploy Cloud Run (cloudbuild.yaml)
 */

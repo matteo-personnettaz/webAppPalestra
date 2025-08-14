@@ -1,12 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * API Palestra – Cloud SQL + Firebase Auth (UID filter)
- * - Cloud Run / Connector: DB_SOCKET = /cloudsql/<PROJECT:REGION:INSTANCE>
- * - Proxy locale/sidecar:  DB_HOST=127.0.0.1  DB_PORT=3307
- */
-
 /* ===== CORS & JSON ===== */
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -14,35 +8,29 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 header('Content-Type: application/json; charset=utf-8');
 
-/* ===== Firebase Admin (Kreait) ===== */
+/* ===== Composer & Firebase Auth ===== */
 require __DIR__ . '/vendor/autoload.php';
-use Kreait\Firebase\Factory;
+
+// Riusa la factory centralizzata (restituisce un Auth pronto)
+$auth = require __DIR__ . '/firebase_admin.php';
 
 /* ===== Helper: verifica token e restituisce UID ===== */
-function require_uid(): string {
-  $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-  if (!preg_match('/Bearer\s+(\S+)/i', $authHeader, $m)) {
+function require_uid($auth): string {
+  $hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+  if (!preg_match('/Bearer\s+(\S+)/i', $hdr, $m)) {
     http_response_code(401);
     echo json_encode(['success'=>false,'error'=>'Missing bearer token']); exit;
   }
-  $idToken = $m[1];
-
-  // Path via secret montato (consigliato) oppure fallback locale
-  $path = getenv('FIREBASE_CREDENTIALS_PATH') ?: (__DIR__ . '/secure/service-account.json');
-
   try {
-    $auth = (new Factory())->withServiceAccount($path)->createAuth();
-    $verified = $auth->verifyIdToken($idToken);
-    /** @var string $uid */
-    $uid = $verified->claims()->get('sub');
-    return $uid;
+    $verified = $auth->verifyIdToken($m[1]);
+    return $verified->claims()->get('sub');
   } catch (Throwable $e) {
     http_response_code(401);
     echo json_encode(['success'=>false,'error'=>'Invalid token: '.$e->getMessage()]); exit;
   }
 }
 
-/* ===== API KEY ===== */
+/* ===== API KEY (se la vuoi ancora per compatibilità) ===== */
 $API_KEY = getenv('API_KEY') ?: 'override_me_in_prod';
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $key    = $_GET['key']    ?? $_POST['key']    ?? '';
@@ -52,43 +40,37 @@ $CFG = [
   'DB_NAME'   => getenv('DB_NAME')   ?: 'fitness_db',
   'DB_USER'   => getenv('DB_USER')   ?: '',
   'DB_PASS'   => getenv('DB_PASS')   ?: '',
-  'DB_SOCKET' => getenv('DB_SOCKET') ?: '', // es: /cloudsql/cloud-palestra-athena:us-east1:root
-  'DB_HOST'   => getenv('DB_HOST')   ?: '', // es: 127.0.0.1 (proxy) o IP pubblico (solo test)
+  'DB_SOCKET' => getenv('DB_SOCKET') ?: '',
+  'DB_HOST'   => getenv('DB_HOST')   ?: '',
   'DB_PORT'   => (int)(getenv('DB_PORT') ?: 3306),
 ];
 
-/* ===== ROUTE: ping / whoami (no DB) ===== */
-if ($action === 'ping') {
-  echo json_encode(['success'=>true,'message'=>'pong']); exit;
-}
+/* ===== ROUTE: ping / whoami / socketcheck (no DB) ===== */
+if ($action === 'ping') { echo json_encode(['success'=>true,'message'=>'pong']); exit; }
 if ($action === 'whoami') {
   echo json_encode([
-    'ok'  => true,
-    'rev' => getenv('K_REVISION') ?: 'n/a',
+    'success'    => true,
+    'rev'        => getenv('K_REVISION') ?: 'n/a',
     'has_socket' => $CFG['DB_SOCKET'] ?: 'n/a',
-  ]);
-  exit;
+  ]); exit;
 }
-
-/* ===== ROUTE: socketcheck (no DB) ===== */
 if ($action === 'socketcheck') {
   $sock = $CFG['DB_SOCKET'];
   echo json_encode([
+    'success'     => true,
     'dir_exists'  => is_dir('/cloudsql'),
     'sock'        => $sock,
     'sock_exists' => $sock ? file_exists($sock) : null,
-  ]);
-  exit;
+  ]); exit;
 }
 
-/* ===== Auth per le rotte che toccano il DB (tutte le altre) ===== */
+/* ===== Auth per le rotte che toccano il DB ===== */
 if (!in_array($action, ['ping','whoami','socketcheck','diag'], true)) {
   if ($key !== $API_KEY) {
     http_response_code(403);
     echo json_encode(['success'=>false,'error'=>'Chiave API non valida']); exit;
   }
-  // 🔐 ottieni UID verificato
-  $uid = require_uid();
+  $uid = require_uid($auth);
 }
 
 /* ===== PDO factory (socket > tcp) ===== */
@@ -99,14 +81,14 @@ function connect_pdo(array $cfg): array {
     PDO::ATTR_EMULATE_PREPARES   => false,
   ];
   $tried = [];
-  // 1) UNIX SOCKET
+  // UNIX SOCKET
   if (!empty($cfg['DB_SOCKET'])) {
     $dsn = "mysql:unix_socket={$cfg['DB_SOCKET']};dbname={$cfg['DB_NAME']};charset=utf8mb4";
     $tried[] = $dsn;
     try { return [new PDO($dsn, $cfg['DB_USER'], $cfg['DB_PASS'], $opt), 'unix_socket', $tried]; }
     catch (Throwable $e) { $last = $e->getMessage(); }
   }
-  // 2) TCP
+  // TCP
   if (!empty($cfg['DB_HOST'])) {
     $dsn = "mysql:host={$cfg['DB_HOST']};port={$cfg['DB_PORT']};dbname={$cfg['DB_NAME']};charset=utf8mb4";
     $tried[] = $dsn;
