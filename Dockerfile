@@ -32,6 +32,9 @@ RUN sed -ri "s/Listen 80/Listen ${PORT}/g" /etc/apache2/ports.conf \
 
 # 4) Copia vendor dall'immagine deps (Composer) e poi i sorgenti
 WORKDIR /var/www/html
+# dopo WORKDIR /var/www/html, prima della COPY finale va bene lo stesso
+RUN mkdir -p /var/www/html/secure && chown -R www-data:www-data /var/www/html
+
 COPY --from=deps /app/vendor /var/www/html/vendor
 COPY src/ /var/www/html/
 
