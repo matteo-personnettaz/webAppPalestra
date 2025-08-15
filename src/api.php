@@ -131,6 +131,24 @@ if ($action === 'diag') {
 try {
   switch ($action) {
 
+    case 'bootstrap_user':
+      // richiede: Bearer token + API key
+      $uid = require_uid($auth);
+      $email = $_POST['email'] ?? null;
+      $displayName = $_POST['displayName'] ?? null;
+
+      // crea tabella se non esiste (o falla creare via migration)
+      // CREATE TABLE UTENTI (UID VARCHAR(128) PRIMARY KEY, EMAIL VARCHAR(255), DISPLAY_NAME VARCHAR(255), D_CREATO TIMESTAMP DEFAULT CURRENT_TIMESTAMP, D_AGG TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+
+      // upsert
+      $sql = "INSERT INTO UTENTI (UID, EMAIL, DISPLAY_NAME)
+              VALUES (?,?,?)
+              ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), DISPLAY_NAME=VALUES(DISPLAY_NAME)";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute([$uid, $email, $displayName]);
+      echo json_encode(['success'=>true]);
+      break;
+
 /* =========================
  *        CLIENTI (UID)
  * ========================= */
@@ -361,7 +379,7 @@ try {
       break;
 
 /* =========================
- *   SCHEDE (TESTA) (UID) — SCHEDE_ESERCIZI_TESTA
+ *   SCHEDE (TESTA) (UID) — SCHEDE_TESTA
  * ========================= */
     case 'get_schede_testa':
       $clientId = isset($_GET['clientId']) ? (int)$_GET['clientId'] : (isset($_POST['clientId']) ? (int)$_POST['clientId'] : 0);
@@ -370,10 +388,10 @@ try {
         $chk->execute([$clientId, $uid]);
         if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
 
-        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE UID=? AND ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
+        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? AND ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
         $stmt->execute([$uid, $clientId]);
       } else {
-        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE UID=? ORDER BY ID_SCHEDAT DESC");
+        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? ORDER BY ID_SCHEDAT DESC");
         $stmt->execute([$uid]);
       }
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
@@ -385,7 +403,7 @@ try {
       $chk->execute([$clientId, $uid]);
       if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
 
-      $sql = "INSERT INTO SCHEDE_ESERCIZI_TESTA
+      $sql = "INSERT INTO SCHEDE_TESTA
               (UID, ID_CLIENTE, DATA_INIZIO, NUM_SETIMANE, GIORNI_A_SET, NOTE)
               VALUES (?,?,?,?,?,?)";
       $stmt = $pdo->prepare($sql);
@@ -406,7 +424,7 @@ try {
       $chk->execute([$clientId, $uid]);
       if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
 
-      $sql = "UPDATE SCHEDE_ESERCIZI_TESTA
+      $sql = "UPDATE SCHEDE_TESTA
               SET ID_CLIENTE=?, DATA_INIZIO=?, NUM_SETIMANE=?, GIORNI_A_SET=?, NOTE=?
               WHERE ID_SCHEDAT=? AND UID=?";
       $stmt = $pdo->prepare($sql);
@@ -416,37 +434,37 @@ try {
         $_POST['numSettimane']  ?? 3,   // NUM_SETIMANE
         $_POST['giorniASet']    ?? 5,
         ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
-        (int)($_POST['id_scheda'] ?? 0),
+        (int)($_POST['id_schedat'] ?? 0),
         $uid,
       ]);
       echo json_encode(['success'=>true]);
       break;
 
     case 'delete_scheda_testa':
-      $stmt = $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_TESTA WHERE ID_SCHEDAT=? AND UID=?");
+      $stmt = $pdo->prepare("DELETE FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
       $stmt->execute([(int)($_POST['id'] ?? 0), $uid]);
       echo json_encode(['success'=>true]);
       break;
 
 /* =========================
- *  VOCI DI SCHEDA (UID) — SCHEDE_ESERCIZI_DETTA
+ *  VOCI DI SCHEDA (UID) — SCHEDE_DETTA
  * ========================= */
     case 'get_voci_scheda':
-      $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
-      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_scheda mancante']); break; }
+      $idScheda = (int)($_GET['id_schedat'] ?? $_POST['id_schedat'] ?? 0);
+      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_schedat mancante']); break; }
 
-      $own = $pdo->prepare("SELECT 1 FROM SCHEDE_ESERCIZI_TESTA WHERE ID_SCHEDAT=? AND UID=?");
+      $own = $pdo->prepare("SELECT 1 FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
       $own->execute([$idScheda, $uid]);
       if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
 
-      $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_DETTA WHERE UID=? AND ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
+      $stmt = $pdo->prepare("SELECT * FROM SCHEDE_DETTA WHERE UID=? AND ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
       $stmt->execute([$uid, $idScheda]);
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
 
     case 'insert_voce_scheda':
-      $idScheda = (int)($_POST['id_scheda'] ?? 0);
-      $own = $pdo->prepare("SELECT 1 FROM SCHEDE_ESERCIZI_TESTA WHERE ID_SCHEDAT=? AND UID=?");
+      $idScheda = (int)($_POST['id_schedat'] ?? 0);
+      $own = $pdo->prepare("SELECT 1 FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
       $own->execute([$idScheda, $uid]);
       if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
 
@@ -457,7 +475,7 @@ try {
       $rest        = (int)($_POST['rest'] ?? 0);
       $ordine      = (int)($_POST['ordine'] ?? 0);
 
-      $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA
+      $sql = "INSERT INTO SCHEDE_DETTA
               (UID, ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
               VALUES (?,?,?,?,?,?,?,?,?,?,?)";
       $stmt = $pdo->prepare($sql);
@@ -484,7 +502,7 @@ try {
       $rest        = (int)($_POST['rest'] ?? 0);
       $ordine      = (int)($_POST['ordine'] ?? 0);
 
-      $sql = "UPDATE SCHEDE_ESERCIZI_DETTA
+      $sql = "UPDATE SCHEDE_DETTA
               SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, ORDINE=?, NOTE=?
               WHERE ID_SCHEDAD=? AND UID=?";
       $stmt = $pdo->prepare($sql);
@@ -505,7 +523,7 @@ try {
       break;
 
     case 'delete_voce_scheda':
-      $stmt = $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAD=? AND UID=?");
+      $stmt = $pdo->prepare("DELETE FROM SCHEDE_DETTA WHERE ID_SCHEDAD=? AND UID=?");
       $stmt->execute([(int)($_POST['id_voce'] ?? 0), $uid]);
       echo json_encode(['success'=>true]);
       break;
