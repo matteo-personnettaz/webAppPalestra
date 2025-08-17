@@ -1,29 +1,63 @@
 <?php
+
 declare(strict_types=1);
 
 /* ===== CORS & JSON ===== */
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+  http_response_code(204);
+  exit;
+}
 header('Content-Type: application/json; charset=utf-8');
 
 /* ===== Composer (SOLO QUI) ===== */
 require __DIR__ . '/vendor/autoload.php';
 
-/* ===== Helper: verifica token e restituisce UID ===== */
-function require_uid($auth): string {
-  $hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+/* ===== Helpers ===== */
+// Legge l'Authorization provando più varianti (Apache/CGI)
+function read_authorization_header(): string
+{
+  $hdr =
+    $_SERVER['HTTP_AUTHORIZATION'] ??
+    $_SERVER['Authorization'] ??
+    $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+
+  if ($hdr === '') {
+    if (function_exists('apache_request_headers')) {
+      $all = apache_request_headers();
+    } elseif (function_exists('getallheaders')) {
+      $all = getallheaders();
+    } else {
+      $all = [];
+    }
+    foreach ($all as $k => $v) {
+      if (strcasecmp($k, 'Authorization') === 0) {
+        $hdr = $v;
+        break;
+      }
+    }
+  }
+  return (string)$hdr;
+}
+
+// Verifica token e restituisce UID
+function require_uid($auth): string
+{
+  $hdr = read_authorization_header();
   if (!preg_match('/Bearer\s+(\S+)/i', $hdr, $m)) {
     http_response_code(401);
-    echo json_encode(['success'=>false,'error'=>'Missing bearer token']); exit;
+    echo json_encode(['success' => false, 'error' => 'Missing bearer token']);
+    exit;
   }
   try {
     $verified = $auth->verifyIdToken($m[1]);
     return (string)$verified->claims()->get('sub');
   } catch (Throwable $e) {
     http_response_code(401);
-    echo json_encode(['success'=>false,'error'=>'Invalid token: '.$e->getMessage()]); exit;
+    echo json_encode(['success' => false, 'error' => 'Invalid token: ' . $e->getMessage()]);
+    exit;
   }
 }
 
@@ -41,31 +75,32 @@ $CFG = [
   'DB_PORT'   => (int)(getenv('DB_PORT') ?: 3306),
 ];
 
-/* ===== Rotte pubbliche ===== */
-if ($action === 'ping')      { echo json_encode(['success'=>true,'message'=>'pong']); exit; }
-if ($action === 'whoami')    { echo json_encode(['success'=>true,'rev'=>getenv('K_REVISION') ?: 'n/a','has_socket'=>$CFG['DB_SOCKET'] ?: 'n/a']); exit; }
-if ($action === 'socketcheck'){ echo json_encode(['success'=>true,'dir_exists'=>is_dir('/cloudsql'),'sock'=>$CFG['DB_SOCKET'],'sock_exists'=>$CFG['DB_SOCKET']? file_exists($CFG['DB_SOCKET']) : null]); exit; }
-
-/* ===== Auth per le rotte protette ===== */
-$isPublic = in_array($action, ['ping','whoami','socketcheck','diag'], true);
-$auth = null;
-if (!$isPublic) {
-  if ($key !== $API_KEY) {
-    http_response_code(403);
-    echo json_encode(['success'=>false,'error'=>'Chiave API non valida']); exit;
-  }
-  // CARICA QUI Firebase solo se serve
-  $auth = require __DIR__ . '/firebase_admin.php';
-  $uid  = require_uid($auth);
+/* ===== Rotte pubbliche senza DB ===== */
+if ($action === 'ping') {
+  echo json_encode(['success' => true, 'message' => 'pong']);
+  exit;
+}
+if ($action === 'whoami') {
+  echo json_encode([
+    'success' => true,
+    'rev' => getenv('K_REVISION') ?: 'n/a',
+    'has_socket' => $CFG['DB_SOCKET'] ?: 'n/a',
+  ]);
+  exit;
+}
+if ($action === 'socketcheck') {
+  echo json_encode([
+    'success' => true,
+    'dir_exists' => is_dir('/cloudsql'),
+    'sock' => $CFG['DB_SOCKET'],
+    'sock_exists' => $CFG['DB_SOCKET'] ? file_exists($CFG['DB_SOCKET']) : null,
+  ]);
+  exit;
 }
 
-
-$stmt = $pdo->prepare("SELECT IS_ADMIN FROM UTENTI WHERE UID=?");
-$stmt->execute([$uid]);
-$isAdmin = (bool)($stmt->fetchColumn() ?: 0);
-
 /* ===== PDO factory (socket > tcp) ===== */
-function connect_pdo(array $cfg): array {
+function connect_pdo(array $cfg): array
+{
   $opt = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -76,27 +111,39 @@ function connect_pdo(array $cfg): array {
   if (!empty($cfg['DB_SOCKET'])) {
     $dsn = "mysql:unix_socket={$cfg['DB_SOCKET']};dbname={$cfg['DB_NAME']};charset=utf8mb4";
     $tried[] = $dsn;
-    try { return [new PDO($dsn, $cfg['DB_USER'], $cfg['DB_PASS'], $opt), 'unix_socket', $tried]; }
-    catch (Throwable $e) { $last = $e->getMessage(); }
+    try {
+      return [new PDO($dsn, $cfg['DB_USER'], $cfg['DB_PASS'], $opt), 'unix_socket', $tried];
+    } catch (Throwable $e) {
+      $last = $e->getMessage();
+    }
   }
   // TCP
   if (!empty($cfg['DB_HOST'])) {
     $dsn = "mysql:host={$cfg['DB_HOST']};port={$cfg['DB_PORT']};dbname={$cfg['DB_NAME']};charset=utf8mb4";
     $tried[] = $dsn;
-    try { return [new PDO($dsn, $cfg['DB_USER'], $cfg['DB_PASS'], $opt), 'tcp', $tried]; }
-    catch (Throwable $e) { $last = $e->getMessage(); }
+    try {
+      return [new PDO($dsn, $cfg['DB_USER'], $cfg['DB_PASS'], $opt), 'tcp', $tried];
+    } catch (Throwable $e) {
+      $last = $e->getMessage();
+    }
   }
   http_response_code(500);
   echo json_encode([
-    'success'=>false,
-    'error'=>'Connessione DB fallita',
-    'details'=>['dsn_tried'=>$tried, 'last_error'=>$last ?? 'n/a', 'hint'=>'Impostare DB_SOCKET oppure DB_HOST/DB_PORT'],
+    'success' => false,
+    'error' => 'Connessione DB fallita',
+    'details' => ['dsn_tried' => $tried, 'last_error' => $last ?? 'n/a', 'hint' => 'Impostare DB_SOCKET oppure DB_HOST/DB_PORT'],
   ]);
   exit;
 }
 
-/* ===== DB CONNECT ===== */
-[$pdo, $connKind, $dsnTried] = connect_pdo($CFG);
+/* ===== DB CONNECT (serve per diag e per rotte protette) ===== */
+$needsDb = ($action === 'diag') || !in_array($action, ['ping', 'whoami', 'socketcheck'], true);
+$pdo = null;
+$connKind = null;
+$dsnTried = null;
+if ($needsDb) {
+  [$pdo, $connKind, $dsnTried] = connect_pdo($CFG);
+}
 
 /* ===== DIAG (con DB) ===== */
 if ($action === 'diag') {
@@ -105,24 +152,50 @@ if ($action === 'diag') {
     $ssl  = $pdo->query("SHOW VARIABLES LIKE 'require_secure_transport'")->fetch();
     $cnt  = $pdo->query("SELECT COUNT(*) c FROM information_schema.tables WHERE table_schema=DATABASE()")->fetch();
     echo json_encode([
-      'success'=>true,
-      'connection'=>['kind'=>$connKind, 'dsn_tried'=>$dsnTried],
-      'meta'=>$meta,
-      'require_secure_transport'=>$ssl['Value'] ?? null,
-      'tables_count'=>(int)($cnt['c'] ?? 0),
+      'success' => true,
+      'connection' => ['kind' => $connKind, 'dsn_tried' => $dsnTried],
+      'meta' => $meta,
+      'require_secure_transport' => $ssl['Value'] ?? null,
+      'tables_count' => (int)($cnt['c'] ?? 0),
     ]);
   } catch (Throwable $e) {
     http_response_code(500);
-    echo json_encode(['success'=>false,'error'=>$e->getMessage(),'dsn_tried'=>$dsnTried]);
+    echo json_encode(['success' => false, 'error' => $e->getMessage(), 'dsn_tried' => $dsnTried]);
   }
   exit;
+}
+
+/* ===== Auth per le rotte protette ===== */
+$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag'], true);
+$uid = null;
+$isAdmin = false;
+$auth = null;
+
+if (!$isPublic) {
+  if ($key !== $API_KEY) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Chiave API non valida']);
+    exit;
+  }
+  // Auth Firebase (lazy) + UID
+  $auth = require __DIR__ . '/firebase_admin.php';
+  $uid  = require_uid($auth);
+
+  // Calcola flag admin (UTENTI può non esistere ancora → fallback false)
+  try {
+    $stmt = $pdo->prepare("SELECT IS_ADMIN FROM UTENTI WHERE UID=?");
+    $stmt->execute([$uid]);
+    $isAdmin = (bool)($stmt->fetchColumn() ?: 0);
+  } catch (Throwable $e) {
+    $isAdmin = false;
+  }
 }
 
 /* ===== ROUTING ===== */
 try {
   switch ($action) {
     case 'bootstrap_user':
-      $uid = require_uid($auth);
+      // $auth e $uid già valorizzati qui
       $email = $_POST['email'] ?? null;
       $displayName = $_POST['displayName'] ?? null;
 
@@ -139,6 +212,7 @@ try {
       echo json_encode(['success' => true, 'is_admin' => $isAdmin]);
       break;
 
+
 /* =========================
  *        CLIENTI (UID)
  * ========================= */
@@ -152,7 +226,7 @@ try {
                               FROM CLIENTI WHERE UID=? ORDER BY COGNOME, NOME');
         $stmt->execute([$uid]);
       }
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
     case 'insert_cliente':
@@ -169,13 +243,13 @@ try {
         $_POST['phone'] ?? null,
         $_POST['email'] ?? null,
       ]);
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
       break;
 
     case 'update_cliente':
-      $sql='UPDATE CLIENTI SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
+      $sql = 'UPDATE CLIENTI SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
             WHERE ID_CLIENTE=? AND UID=?';
-      $stmt=$pdo->prepare($sql);
+      $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $_POST['lastName'] ?? '',
         $_POST['firstName'] ?? '',
@@ -187,41 +261,50 @@ try {
         (int)($_POST['id'] ?? 0),
         $uid,
       ]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'delete_cliente':
-      $stmt=$pdo->prepare('DELETE FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
+      $stmt = $pdo->prepare('DELETE FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $stmt->execute([(int)($_POST['id'] ?? 0), $uid]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
-/* =========================
+    /* =========================
  *       MISURAZIONI (UID)
  * ========================= */
     case 'get_misurazioni':
       $cid = (int)($_GET['clientId'] ?? $_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$cid, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
-      $stmt=$pdo->prepare('SELECT * FROM MISURAZIONI WHERE UID=? AND ID_CLIENTE=? ORDER BY DATA_MISURAZIONE DESC');
+      $stmt = $pdo->prepare('SELECT * FROM MISURAZIONI WHERE UID=? AND ID_CLIENTE=? ORDER BY DATA_MISURAZIONE DESC');
       $stmt->execute([$uid, $cid]);
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
     case 'insert_misurazione':
       $cid = (int)($_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$cid, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
-      $sql='INSERT INTO MISURAZIONI
+      $sql = 'INSERT INTO MISURAZIONI
             (UID, ID_CLIENTE, DATA_MISURAZIONE, PESO, ALTEZZA, TORACE, VITA, FIANCHI, BRACCIO_SX, BRACCIO_DX, COSCIA_SX, COSCIA_DX)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)';
-      $stmt=$pdo->prepare($sql);
+      $stmt = $pdo->prepare($sql);
       $stmt->execute([
-        $uid, $cid,
+        $uid,
+        $cid,
         $_POST['date'] ?? date('Y-m-d'),
         $_POST['weight'] ?? null,
         $_POST['height'] ?? null,
@@ -233,18 +316,22 @@ try {
         $_POST['leftThigh'] ?? null,
         $_POST['rightThigh'] ?? null,
       ]);
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
       break;
 
     case 'update_misurazione':
       $cid = (int)($_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$cid, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
-      $sql='UPDATE MISURAZIONI SET ID_CLIENTE=?,DATA_MISURAZIONE=?,PESO=?,ALTEZZA=?,TORACE=?,VITA=?,FIANCHI=?,BRACCIO_SX=?,BRACCIO_DX=?,COSCIA_SX=?,COSCIA_DX=?
+      $sql = 'UPDATE MISURAZIONI SET ID_CLIENTE=?,DATA_MISURAZIONE=?,PESO=?,ALTEZZA=?,TORACE=?,VITA=?,FIANCHI=?,BRACCIO_SX=?,BRACCIO_DX=?,COSCIA_SX=?,COSCIA_DX=?
             WHERE ID_MISURAZIONE=? AND UID=?';
-      $stmt=$pdo->prepare($sql);
+      $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $cid,
         $_POST['date'] ?? date('Y-m-d'),
@@ -260,26 +347,26 @@ try {
         (int)($_POST['id'] ?? 0),
         $uid,
       ]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'delete_misurazione':
-      $stmt=$pdo->prepare('DELETE FROM MISURAZIONI WHERE ID_MISURAZIONE=? AND UID=?');
+      $stmt = $pdo->prepare('DELETE FROM MISURAZIONI WHERE ID_MISURAZIONE=? AND UID=?');
       $stmt->execute([(int)($_POST['id'] ?? 0), $uid]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
-/* =========================
+    /* =========================
  *        ESERCIZI (GLOBALI)
  * ========================= */
     case 'get_esercizi':
-      $stmt=$pdo->query('SELECT * FROM ESERCIZI ORDER BY NOME');
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      $stmt = $pdo->query('SELECT * FROM ESERCIZI ORDER BY NOME');
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
     case 'insert_esercizio':
-      $sql='INSERT INTO ESERCIZI (SIGLA,NOME,DESCRIZIONE,GRUPPO_MUSCOLARE,VIDEO_URL,IMG_URL) VALUES (?,?,?,?,?,?)';
-      $stmt=$pdo->prepare($sql);
+      $sql = 'INSERT INTO ESERCIZI (SIGLA,NOME,DESCRIZIONE,GRUPPO_MUSCOLARE,VIDEO_URL,IMG_URL) VALUES (?,?,?,?,?,?)';
+      $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $_POST['sigla'] ?? null,
         $_POST['nome'] ?? null,
@@ -288,12 +375,12 @@ try {
         $_POST['videoUrl'] ?: null,
         $_POST['imgUrl']  ?: null,
       ]);
-      echo json_encode(['success'=>true,'id'=>$pdo->lastInsertId()]);
+      echo json_encode(['success' => true, 'id' => $pdo->lastInsertId()]);
       break;
 
     case 'update_esercizio':
-      $sql='UPDATE ESERCIZI SET SIGLA=?,NOME=?,DESCRIZIONE=?,GRUPPO_MUSCOLARE=?,VIDEO_URL=?,IMG_URL=? WHERE ID_ESERCIZIO=?';
-      $stmt=$pdo->prepare($sql);
+      $sql = 'UPDATE ESERCIZI SET SIGLA=?,NOME=?,DESCRIZIONE=?,GRUPPO_MUSCOLARE=?,VIDEO_URL=?,IMG_URL=? WHERE ID_ESERCIZIO=?';
+      $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $_POST['sigla'] ?? null,
         $_POST['nome'] ?? null,
@@ -303,24 +390,24 @@ try {
         $_POST['imgUrl']  ?: null,
         (int)($_POST['id'] ?? 0),
       ]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'delete_esercizio':
-      $stmt=$pdo->prepare('DELETE FROM ESERCIZI WHERE ID_ESERCIZIO=?');
+      $stmt = $pdo->prepare('DELETE FROM ESERCIZI WHERE ID_ESERCIZIO=?');
       $stmt->execute([(int)($_POST['id'] ?? 0)]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
-/* =========================
+    /* =========================
  *     TIPI APPUNTAMENTO (GLOBALI)
  * ========================= */
     case 'get_tipo_appuntamento':
-      $stmt=$pdo->query("SELECT ID_AGGETTIVO AS CODICE, DESCRIZIONE FROM REFERENZECOMBO_0099 WHERE ID_CLASSE='TIPO_APPUNTAMENTO' ORDER BY ORDINE");
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      $stmt = $pdo->query("SELECT ID_AGGETTIVO AS CODICE, DESCRIZIONE FROM REFERENZECOMBO_0099 WHERE ID_CLASSE='TIPO_APPUNTAMENTO' ORDER BY ORDINE");
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
-/* =========================
+    /* =========================
  *        APPUNTAMENTI (UID)
  * ========================= */
     case 'get_appuntamenti':
@@ -339,16 +426,20 @@ try {
                               ORDER BY a.DATA_ORA ASC");
         $stmt->execute([$uid, $uid]);
       }
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
     case 'insert_appuntamento':
       $cid = (int)($_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$cid, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
-      $stmt=$pdo->prepare("INSERT INTO APPUNTAMENTI (UID, ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE) VALUES (?,?,?,?,?)");
+      $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (UID, ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE) VALUES (?,?,?,?,?)");
       $stmt->execute([
         $uid,
         $cid,
@@ -356,16 +447,20 @@ try {
         $_POST['typeCode'] ?? 'GENE',
         $_POST['note']     ?: null,
       ]);
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
       break;
 
     case 'update_appuntamento':
       $cid = (int)($_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$cid, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
-      $stmt=$pdo->prepare("UPDATE APPUNTAMENTI SET ID_CLIENTE=?,DATA_ORA=?,TIPOLOGIA=?,NOTE=? WHERE ID_APPUNTAMENTO=? AND UID=?");
+      $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET ID_CLIENTE=?,DATA_ORA=?,TIPOLOGIA=?,NOTE=? WHERE ID_APPUNTAMENTO=? AND UID=?");
       $stmt->execute([
         $cid,
         $_POST['datetime'] ?? date('Y-m-d H:i:s'),
@@ -374,13 +469,13 @@ try {
         (int)($_POST['id'] ?? 0),
         $uid,
       ]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'delete_appuntamento':
-      $stmt=$pdo->prepare("DELETE FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? AND UID=?");
+      $stmt = $pdo->prepare("DELETE FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? AND UID=?");
       $stmt->execute([(int)($_POST['id'] ?? 0), $uid]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'get_fasce_disponibili':
@@ -393,178 +488,269 @@ try {
               WHERE UID=? AND OCCUPATO=0 AND INIZIO >= NOW()";
       $par = [$uid];
 
-      if ($tipo) { $sql .= " AND TIPOLOGIA=?"; $par[] = $tipo; }
-      if ($dal)  { $sql .= " AND DATE(INIZIO) >= ?"; $par[] = $dal; }
-      if ($al)   { $sql .= " AND DATE(INIZIO) <= ?"; $par[] = $al; }
+      if ($tipo) {
+        $sql .= " AND TIPOLOGIA=?";
+        $par[] = $tipo;
+      }
+      if ($dal) {
+        $sql .= " AND DATE(INIZIO) >= ?";
+        $par[] = $dal;
+      }
+      if ($al) {
+        $sql .= " AND DATE(INIZIO) <= ?";
+        $par[] = $al;
+      }
 
       $sql .= " ORDER BY INIZIO ASC";
       $stmt = $pdo->prepare($sql);
       $stmt->execute($par);
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
-      case 'get_fasce_admin':
-        if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+    case 'get_fasce_admin':
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Solo admin']);
+        break;
+      }
 
-        $tipo  = $_GET['tipologia'] ?? $_POST['tipologia'] ?? null;
-        $stato = $_GET['stato']     ?? $_POST['stato']     ?? null; // 'libere' | 'occupate' | 'tutte'
-        $dal   = $_GET['dal']       ?? $_POST['dal']       ?? null;
-        $al    = $_GET['al']        ?? $_POST['al']        ?? null;
+      $tipo  = $_GET['tipologia'] ?? $_POST['tipologia'] ?? null;
+      $stato = $_GET['stato']     ?? $_POST['stato']     ?? null; // 'libere' | 'occupate' | 'tutte'
+      $dal   = $_GET['dal']       ?? $_POST['dal']       ?? null;
+      $al    = $_GET['al']        ?? $_POST['al']        ?? null;
 
-        $sql = "SELECT ID_SLOT, TIPOLOGIA, INIZIO, FINE, OCCUPATO, NOTE
+      $sql = "SELECT ID_SLOT, TIPOLOGIA, INIZIO, FINE, OCCUPATO, NOTE
                 FROM FASCE_APPUNTAMENTO
                 WHERE UID=?";
-        $par = [$uid];
+      $par = [$uid];
 
-        if ($tipo)  { $sql .= " AND TIPOLOGIA=?"; $par[] = $tipo; }
-        if ($stato === 'libere')   { $sql .= " AND OCCUPATO=0"; }
-        if ($stato === 'occupate') { $sql .= " AND OCCUPATO=1"; }
-        if ($dal)   { $sql .= " AND DATE(INIZIO) >= ?"; $par[] = $dal; }
-        if ($al)    { $sql .= " AND DATE(INIZIO) <= ?"; $par[] = $al; }
+      if ($tipo) {
+        $sql .= " AND TIPOLOGIA=?";
+        $par[] = $tipo;
+      }
+      if ($stato === 'libere') {
+        $sql .= " AND OCCUPATO=0";
+      }
+      if ($stato === 'occupate') {
+        $sql .= " AND OCCUPATO=1";
+      }
+      if ($dal) {
+        $sql .= " AND DATE(INIZIO) >= ?";
+        $par[] = $dal;
+      }
+      if ($al) {
+        $sql .= " AND DATE(INIZIO) <= ?";
+        $par[] = $al;
+      }
 
-        $sql .= " ORDER BY INIZIO ASC";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($par);
-        echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      $sql .= " ORDER BY INIZIO ASC";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute($par);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
+      break;
+
+    case 'insert_fascia':
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Solo admin']);
         break;
+      }
 
-        case 'insert_fascia':
-          if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $tipologia = $_POST['tipologia'] ?? null;
+      $inizio    = $_POST['inizio']    ?? null; // 'YYYY-MM-DD HH:MM:SS'
+      $fine      = $_POST['fine']      ?? null;
+      $note      = $_POST['note']      ?? null;
 
-          $tipologia = $_POST['tipologia'] ?? null;
-          $inizio    = $_POST['inizio']    ?? null; // 'YYYY-MM-DD HH:MM:SS'
-          $fine      = $_POST['fine']      ?? null;
-          $note      = $_POST['note']      ?? null;
+      if (!$tipologia || !$inizio || !$fine) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Parametri tipologia/inizio/fine obbligatori']);
+        break;
+      }
 
-          if (!$tipologia || !$inizio || !$fine) {
-            http_response_code(400); echo json_encode(['success'=>false,'error'=>'Parametri tipologia/inizio/fine obbligatori']); break;
-          }
+      try {
+        $sql = "INSERT INTO FASCE_APPUNTAMENTO (UID, TIPOLOGIA, INIZIO, FINE, NOTE) VALUES (?,?,?,?,?)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$uid, $tipologia, $inizio, $fine, ($note !== '' ? $note : null)]);
+        echo json_encode(['success' => true, 'id' => $pdo->lastInsertId()]);
+      } catch (PDOException $e) {
+        // gestisce unique UX_FASCE_UID_TIME_TIPO
+        http_response_code(409);
+        echo json_encode(['success' => false, 'error' => 'Fascia duplicata o non valida', 'details' => $e->getMessage()]);
+      }
+      break;
 
-          try {
-            $sql = "INSERT INTO FASCE_APPUNTAMENTO (UID, TIPOLOGIA, INIZIO, FINE, NOTE) VALUES (?,?,?,?,?)";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([$uid, $tipologia, $inizio, $fine, ($note !== '' ? $note : null)]);
-            echo json_encode(['success'=>true,'id'=>$pdo->lastInsertId()]);
-          } catch (PDOException $e) {
-            // gestisce unique UX_FASCE_UID_TIME_TIPO
-            http_response_code(409);
-            echo json_encode(['success'=>false,'error'=>'Fascia duplicata o non valida','details'=>$e->getMessage()]);
-          }
+    case 'delete_fascia':
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Solo admin']);
+        break;
+      }
+
+      $idSlot = (int)($_POST['id_slot'] ?? 0);
+      if (!$idSlot) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'id_slot obbligatorio']);
+        break;
+      }
+
+      $chk = $pdo->prepare("SELECT OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
+      $chk->execute([$idSlot, $uid]);
+      $row = $chk->fetch();
+      if (!$row) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Fascia non trovata']);
+        break;
+      }
+      if ((int)$row['OCCUPATO'] === 1) {
+        http_response_code(409);
+        echo json_encode(['success' => false, 'error' => 'Fascia occupata, non eliminabile']);
+        break;
+      }
+
+      $del = $pdo->prepare("DELETE FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
+      $del->execute([$idSlot, $uid]);
+      echo json_encode(['success' => true]);
+      break;
+
+    case 'prenota_slot':
+      $idSlot    = (int)($_POST['id_slot'] ?? 0);
+      $idCliente = (int)($_POST['id_cliente'] ?? 0);
+      $note      = $_POST['note'] ?? null;
+
+      if (!$idSlot || !$idCliente) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'id_slot e id_cliente obbligatori']);
+        break;
+      }
+
+      // Check ownership cliente
+      $own = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?");
+      $own->execute([$idCliente, $uid]);
+      if (!$own->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Cliente non trovato']);
+        break;
+      }
+
+      try {
+        $pdo->beginTransaction();
+
+        // Verifica slot libero dello stesso UID
+        $q = $pdo->prepare("SELECT TIPOLOGIA, INIZIO, OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=? FOR UPDATE");
+        $q->execute([$idSlot, $uid]);
+        $s = $q->fetch();
+        if (!$s) {
+          $pdo->rollBack();
+          http_response_code(404);
+          echo json_encode(['success' => false, 'error' => 'Fascia non trovata']);
           break;
-
-        case 'delete_fascia':
-          if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
-
-          $idSlot = (int)($_POST['id_slot'] ?? 0);
-          if (!$idSlot) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_slot obbligatorio']); break; }
-
-          $chk = $pdo->prepare("SELECT OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
-          $chk->execute([$idSlot, $uid]);
-          $row = $chk->fetch();
-          if (!$row) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Fascia non trovata']); break; }
-          if ((int)$row['OCCUPATO'] === 1) { http_response_code(409); echo json_encode(['success'=>false,'error'=>'Fascia occupata, non eliminabile']); break; }
-
-          $del = $pdo->prepare("DELETE FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
-          $del->execute([$idSlot, $uid]);
-          echo json_encode(['success'=>true]);
+        }
+        if ((int)$s['OCCUPATO'] === 1) {
+          $pdo->rollBack();
+          http_response_code(409);
+          echo json_encode(['success' => false, 'error' => 'Fascia già occupata']);
           break;
+        }
 
-          case 'prenota_slot':
-            $idSlot    = (int)($_POST['id_slot'] ?? 0);
-            $idCliente = (int)($_POST['id_cliente'] ?? 0);
-            $note      = $_POST['note'] ?? null;
-
-            if (!$idSlot || !$idCliente) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_slot e id_cliente obbligatori']); break; }
-
-            // Check ownership cliente
-            $own = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?");
-            $own->execute([$idCliente, $uid]);
-            if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Cliente non trovato']); break; }
-
-            try {
-              $pdo->beginTransaction();
-
-              // Verifica slot libero dello stesso UID
-              $q = $pdo->prepare("SELECT TIPOLOGIA, INIZIO, OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=? FOR UPDATE");
-              $q->execute([$idSlot, $uid]);
-              $s = $q->fetch();
-              if (!$s) { $pdo->rollBack(); http_response_code(404); echo json_encode(['success'=>false,'error'=>'Fascia non trovata']); break; }
-              if ((int)$s['OCCUPATO'] === 1) { $pdo->rollBack(); http_response_code(409); echo json_encode(['success'=>false,'error'=>'Fascia già occupata']); break; }
-
-              // Crea appuntamento pendente legato allo slot
-              $ins = $pdo->prepare("INSERT INTO APPUNTAMENTI (UID, ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
+        // Crea appuntamento pendente legato allo slot
+        $ins = $pdo->prepare("INSERT INTO APPUNTAMENTI (UID, ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
                                     VALUES (?,?,?,?,?,0,?)");
-              $ins->execute([$uid, $idCliente, $s['INIZIO'], $s['TIPOLOGIA'], ($note !== '' ? $note : null), $idSlot]);
+        $ins->execute([$uid, $idCliente, $s['INIZIO'], $s['TIPOLOGIA'], ($note !== '' ? $note : null), $idSlot]);
 
-              // Marca fascia occupata
-              $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
+        // Marca fascia occupata
+        $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
 
-              $pdo->commit();
+        $pdo->commit();
 
-              // TODO: invio mail all'admin (facoltativo)
-              // send_mail_admin_nuova_richiesta($uid, $idCliente, $s['INIZIO'], $s['TIPOLOGIA']);
+        // TODO: invio mail all'admin (facoltativo)
+        // send_mail_admin_nuova_richiesta($uid, $idCliente, $s['INIZIO'], $s['TIPOLOGIA']);
 
-              echo json_encode(['success'=>true,'id_appuntamento'=>$pdo->lastInsertId()]);
-            } catch (Throwable $e) {
-              if ($pdo->inTransaction()) $pdo->rollBack();
-              http_response_code(500);
-              echo json_encode(['success'=>false,'error'=>'Errore prenotazione','details'=>$e->getMessage()]);
-            }
-            break;
+        echo json_encode(['success' => true, 'id_appuntamento' => $pdo->lastInsertId()]);
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Errore prenotazione', 'details' => $e->getMessage()]);
+      }
+      break;
 
-          case 'conferma_appuntamento':
-            if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
-            $idApp = (int)($_POST['id_appuntamento'] ?? 0);
-            if (!$idApp) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_appuntamento obbligatorio']); break; }
+    case 'conferma_appuntamento':
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Solo admin']);
+        break;
+      }
+      $idApp = (int)($_POST['id_appuntamento'] ?? 0);
+      if (!$idApp) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'id_appuntamento obbligatorio']);
+        break;
+      }
 
-            $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=? AND UID=?");
-            $stmt->execute([$idApp, $uid]);
-            if ($stmt->rowCount() === 0) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato']); break; }
+      $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=? AND UID=?");
+      $stmt->execute([$idApp, $uid]);
+      if ($stmt->rowCount() === 0) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Appuntamento non trovato']);
+        break;
+      }
 
-            // TODO: invia mail al cliente (facoltativo)
-            echo json_encode(['success'=>true]);
-            break;
+      // TODO: invia mail al cliente (facoltativo)
+      echo json_encode(['success' => true]);
+      break;
 
-          case 'rifiuta_appuntamento':
-            if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
-            $idApp = (int)($_POST['id_appuntamento'] ?? 0);
-            if (!$idApp) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_appuntamento obbligatorio']); break; }
+    case 'rifiuta_appuntamento':
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Solo admin']);
+        break;
+      }
+      $idApp = (int)($_POST['id_appuntamento'] ?? 0);
+      if (!$idApp) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'id_appuntamento obbligatorio']);
+        break;
+      }
 
-            try {
-              $pdo->beginTransaction();
+      try {
+        $pdo->beginTransaction();
 
-              // prendi slot collegato
-              $q = $pdo->prepare("SELECT ID_SLOT FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? AND UID=? FOR UPDATE");
-              $q->execute([$idApp, $uid]);
-              $row = $q->fetch();
-              if (!$row) { $pdo->rollBack(); http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato']); break; }
+        // prendi slot collegato
+        $q = $pdo->prepare("SELECT ID_SLOT FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? AND UID=? FOR UPDATE");
+        $q->execute([$idApp, $uid]);
+        $row = $q->fetch();
+        if (!$row) {
+          $pdo->rollBack();
+          http_response_code(404);
+          echo json_encode(['success' => false, 'error' => 'Appuntamento non trovato']);
+          break;
+        }
 
-              // rifiuta
-              $u = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=2 WHERE ID_APPUNTAMENTO=? AND UID=?");
-              $u->execute([$idApp, $uid]);
+        // rifiuta
+        $u = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=2 WHERE ID_APPUNTAMENTO=? AND UID=?");
+        $u->execute([$idApp, $uid]);
 
-              // libera fascia se nessun altro appuntamento pendente/confermato la usa
-              if ($row['ID_SLOT']) {
-                $cnt = $pdo->prepare("SELECT COUNT(*) c FROM APPUNTAMENTI WHERE ID_SLOT=? AND UID=? AND STATO IN (0,1)");
-                $cnt->execute([(int)$row['ID_SLOT'], $uid]);
-                $c = (int)($cnt->fetch()['c'] ?? 0);
-                if ($c === 0) {
-                  $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=0 WHERE ID_SLOT=? AND UID=?")->execute([(int)$row['ID_SLOT'], $uid]);
-                }
-              }
+        // libera fascia se nessun altro appuntamento pendente/confermato la usa
+        if ($row['ID_SLOT']) {
+          $cnt = $pdo->prepare("SELECT COUNT(*) c FROM APPUNTAMENTI WHERE ID_SLOT=? AND UID=? AND STATO IN (0,1)");
+          $cnt->execute([(int)$row['ID_SLOT'], $uid]);
+          $c = (int)($cnt->fetch()['c'] ?? 0);
+          if ($c === 0) {
+            $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=0 WHERE ID_SLOT=? AND UID=?")->execute([(int)$row['ID_SLOT'], $uid]);
+          }
+        }
 
-              $pdo->commit();
-              echo json_encode(['success'=>true]);
-            } catch (Throwable $e) {
-              if ($pdo->inTransaction()) $pdo->rollBack();
-              http_response_code(500);
-              echo json_encode(['success'=>false,'error'=>'Errore rifiuto','details'=>$e->getMessage()]);
-            }
-            break;
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Errore rifiuto', 'details' => $e->getMessage()]);
+      }
+      break;
 
 
 
-/* =========================
+    /* =========================
  *   SCHEDE (TESTA) (UID) — SCHEDE_TESTA
  * ========================= */
     case 'get_schede_testa':
@@ -581,7 +767,11 @@ try {
         if ($clientId) {
           $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
           $chk->execute([$clientId, $uid]);
-          if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+          if (!$chk->fetch()) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'Client not found']);
+            break;
+          }
 
           $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? AND ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
           $stmt->execute([$uid, $clientId]);
@@ -590,14 +780,18 @@ try {
           $stmt->execute([$uid]);
         }
       }
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
     case 'insert_scheda_testa':
       $clientId = (int)($_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$clientId, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
       $sql = "INSERT INTO SCHEDE_TESTA
               (UID, ID_CLIENTE, DATA_INIZIO, NUM_SETIMANE, GIORNI_A_SET, NOTE)
@@ -611,14 +805,18 @@ try {
         $_POST['giorniASet']    ?? 5,
         ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
       ]);
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
       break;
 
     case 'update_scheda_testa':
       $clientId = (int)($_POST['clientId'] ?? 0);
       $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
       $chk->execute([$clientId, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+      if (!$chk->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Client not found']);
+        break;
+      }
 
       $sql = "UPDATE SCHEDE_TESTA
               SET ID_CLIENTE=?, DATA_INIZIO=?, NUM_SETIMANE=?, GIORNI_A_SET=?, NOTE=?
@@ -633,21 +831,25 @@ try {
         (int)($_POST['id_schedat'] ?? 0),
         $uid,
       ]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'delete_scheda_testa':
       $stmt = $pdo->prepare("DELETE FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
       $stmt->execute([(int)($_POST['id'] ?? 0), $uid]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
-/* =========================
+    /* =========================
  *  VOCI DI SCHEDA (UID) — SCHEDE_DETTA
  * ========================= */
     case 'get_voci_scheda':
       $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
-      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_scheda mancante']); break; }
+      if (!$idScheda) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'id_scheda mancante']);
+        break;
+      }
 
       if ($isAdmin) {
         $stmt = $pdo->prepare("SELECT * FROM SCHEDE_DETTA WHERE ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
@@ -655,19 +857,27 @@ try {
       } else {
         $own = $pdo->prepare("SELECT 1 FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
         $own->execute([$idScheda, $uid]);
-        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
+        if (!$own->fetch()) {
+          http_response_code(404);
+          echo json_encode(['success' => false, 'error' => 'Plan not found']);
+          break;
+        }
 
         $stmt = $pdo->prepare("SELECT * FROM SCHEDE_DETTA WHERE UID=? AND ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
         $stmt->execute([$uid, $idScheda]);
       }
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
     case 'insert_voce_scheda':
       $idScheda = (int)($_POST['id_schedat'] ?? 0);
       $own = $pdo->prepare("SELECT 1 FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
       $own->execute([$idScheda, $uid]);
-      if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
+      if (!$own->fetch()) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Plan not found']);
+        break;
+      }
 
       // campi NOT NULL interi: SERIE, RIPETIZIONI, PESO, REST, ORDINE
       $serie       = (int)($_POST['serie'] ?? 0);
@@ -693,7 +903,7 @@ try {
         $ordine,
         ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
       ]);
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
       break;
 
     case 'update_voce_scheda':
@@ -720,16 +930,16 @@ try {
         (int)($_POST['id_voce'] ?? 0),
         $uid,
       ]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
     case 'delete_voce_scheda':
       $stmt = $pdo->prepare("DELETE FROM SCHEDE_DETTA WHERE ID_SCHEDAD=? AND UID=?");
       $stmt->execute([(int)($_POST['id_voce'] ?? 0), $uid]);
-      echo json_encode(['success'=>true]);
+      echo json_encode(['success' => true]);
       break;
 
-/* =========================
+    /* =========================
  *     GRUPPI MUSCOLARI (GLOBALI)
  * ========================= */
     case 'get_gruppi_muscolari':
@@ -745,10 +955,10 @@ try {
           ORDER BY ORDINE, DESCRIZIONE
         ");
         $stmt->execute();
-        echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
       }
       break;
 
@@ -758,8 +968,14 @@ try {
         $name    = $_POST['name']    ?? null;
         $comment = $_POST['comment'] ?? null;
         $ordine  = $_POST['ordine']  ?? null;
-        if (!$code || !$name) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'Parametri code e name obbligatori']); break; }
-        if ($ordine === null || $ordine === '') { $ordine = 999; }
+        if (!$code || !$name) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Parametri code e name obbligatori']);
+          break;
+        }
+        if ($ordine === null || $ordine === '') {
+          $ordine = 999;
+        }
 
         $sql = "INSERT INTO REFERENZECOMBO_0099
                 (ID_CLASSE, ID_AGGETTIVO, DESCRIZIONE, COMMENTO, ORDINE)
@@ -767,10 +983,10 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$code, $name, ($comment !== '' ? $comment : null), (int)$ordine]);
 
-        echo json_encode(['success'=>true]);
+        echo json_encode(['success' => true]);
       } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
       }
       break;
 
@@ -779,7 +995,11 @@ try {
         $code    = $_POST['code']    ?? null;
         $name    = $_POST['name']    ?? null;
         $comment = $_POST['comment'] ?? null;
-        if (!$code || !$name) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'Parametri code e name obbligatori']); break; }
+        if (!$code || !$name) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Parametri code e name obbligatori']);
+          break;
+        }
 
         $sql = "UPDATE REFERENZECOMBO_0099
                 SET DESCRIZIONE=?, COMMENTO=?
@@ -787,24 +1007,28 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$name, ($comment !== '' ? $comment : null), $code]);
 
-        echo json_encode(['success'=>true]);
+        echo json_encode(['success' => true]);
       } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
       }
       break;
 
     case 'delete_gruppo_muscolare':
       try {
         $code = $_POST['code'] ?? null;
-        if (!$code) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'Parametro code obbligatorio']); break; }
+        if (!$code) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Parametro code obbligatorio']);
+          break;
+        }
 
         $chk = $pdo->prepare("SELECT COUNT(*) AS c FROM ESERCIZI WHERE GRUPPO_MUSCOLARE = ?");
         $chk->execute([$code]);
         $row = $chk->fetch();
         if ((int)($row['c'] ?? 0) > 0) {
           http_response_code(409);
-          echo json_encode(['success'=>false,'error'=>"Impossibile eliminare: esistono esercizi collegati a '$code'."]);
+          echo json_encode(['success' => false, 'error' => "Impossibile eliminare: esistono esercizi collegati a '$code'."]);
           break;
         }
 
@@ -814,20 +1038,20 @@ try {
         ");
         $stmt->execute([$code]);
 
-        echo json_encode(['success'=>true]);
+        echo json_encode(['success' => true]);
       } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
       }
       break;
 
-/* =========================
+    /* =========================
  *         DEFAULT
  * ========================= */
     default:
-      echo json_encode(['success'=>false,'error'=>'Azione non riconosciuta: '.$action]);
+      echo json_encode(['success' => false, 'error' => 'Azione non riconosciuta: ' . $action]);
   }
 } catch (Throwable $e) {
   http_response_code(500);
-  echo json_encode(['success'=>false,'error'=>'DB error: '.$e->getMessage()]);
+  echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
 }
