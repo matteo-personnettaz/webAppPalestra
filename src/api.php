@@ -485,13 +485,13 @@ try {
 
       $sql = "SELECT ID_SLOT, TIPOLOGIA, INIZIO, FINE, NOTE
               FROM FASCE_APPUNTAMENTO
-              WHERE UID=? AND OCCUPATO=0 AND INIZIO >= NOW()";
-      $par = [$uid];
+              WHERE OCCUPATO=0 AND INIZIO >= NOW()";
+      // $par = [$uid];
 
-      if ($tipo) {
-        $sql .= " AND TIPOLOGIA=?";
-        $par[] = $tipo;
-      }
+      // if ($tipo) {
+      //   $sql .= " AND TIPOLOGIA=?";
+      //   $par[] = $tipo;
+      // }
       if ($dal) {
         $sql .= " AND DATE(INIZIO) >= ?";
         $par[] = $dal;
@@ -521,13 +521,13 @@ try {
 
       $sql = "SELECT ID_SLOT, TIPOLOGIA, INIZIO, FINE, OCCUPATO, NOTE
                 FROM FASCE_APPUNTAMENTO
-                WHERE UID=?";
-      $par = [$uid];
+                WHERE 1=1";
+      // $par = [$uid];
 
-      if ($tipo) {
-        $sql .= " AND TIPOLOGIA=?";
-        $par[] = $tipo;
-      }
+      // if ($tipo) {
+      //   $sql .= " AND TIPOLOGIA=?";
+      //   $par[] = $tipo;
+      // }
       if ($stato === 'libere') {
         $sql .= " AND OCCUPATO=0";
       }
