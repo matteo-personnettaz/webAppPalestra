@@ -11,8 +11,6 @@ use Psr\Clock\ClockInterface;
 
 /**
  * @internal
- *
- * @todo Add #[SensitiveParameter] attribute to the private key once the minimum required PHP version is >=8.2
  */
 final class AppCheckTokenGenerator
 {
@@ -26,6 +24,7 @@ final class AppCheckTokenGenerator
      */
     public function __construct(
         private readonly string $clientEmail,
+        #[\SensitiveParameter]
         private readonly string $privateKey,
         ?ClockInterface $clock = null,
     ) {

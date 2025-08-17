@@ -28,9 +28,14 @@ use Kreait\Firebase\Auth\ApiClient;
 use Kreait\Firebase\Auth\CustomTokenViaGoogleCredentials;
 use Kreait\Firebase\Auth\SignIn\GuzzleHandler;
 use Kreait\Firebase\Database\UrlBuilder;
+use Kreait\Firebase\Exception\AppCheckApiExceptionConverter;
+use Kreait\Firebase\Exception\AuthApiExceptionConverter;
+use Kreait\Firebase\Exception\DatabaseApiExceptionConverter;
 use Kreait\Firebase\Exception\InvalidArgumentException;
 use Kreait\Firebase\Exception\MessagingApiExceptionConverter;
+use Kreait\Firebase\Exception\RemoteConfigApiExceptionConverter;
 use Kreait\Firebase\Exception\RuntimeException;
+use Kreait\Firebase\Http\ErrorResponseParser;
 use Kreait\Firebase\Http\HttpClientOptions;
 use Kreait\Firebase\Http\Middleware;
 use Kreait\Firebase\JWT\IdTokenVerifier;
@@ -119,6 +124,8 @@ final class Factory
 
     private HttpClientOptions $httpClientOptions;
 
+    private ErrorResponseParser $errorResponseParser;
+
     /**
      * @var array<non-empty-string, mixed>
      */
@@ -139,6 +146,7 @@ final class Factory
         $this->defaultCache = new InMemoryCache($this->clock);
         $this->httpFactory = new HttpFactory();
         $this->httpClientOptions = HttpClientOptions::default();
+        $this->errorResponseParser = new ErrorResponseParser();
     }
 
     /**
@@ -375,7 +383,7 @@ final class Factory
         );
 
         return new AppCheck(
-            new AppCheck\ApiClient($http),
+            new AppCheck\ApiClient($http, new AppCheckApiExceptionConverter($this->errorResponseParser)),
             new AppCheckTokenGenerator(
                 $serviceAccount->clientEmail,
                 $serviceAccount->privateKey,
@@ -392,7 +400,14 @@ final class Factory
         $httpClient = $this->createApiClient();
 
         $signInHandler = new GuzzleHandler($projectId, $httpClient);
-        $authApiClient = new ApiClient($projectId, $this->tenantId, $httpClient, $signInHandler, $this->clock);
+        $authApiClient = new ApiClient(
+            $projectId,
+            $this->tenantId,
+            $httpClient,
+            $signInHandler,
+            $this->clock,
+            new AuthApiExceptionConverter($this->errorResponseParser),
+        );
         $customTokenGenerator = $this->createCustomTokenGenerator();
         $idTokenVerifier = $this->createIdTokenVerifier();
         $sessionCookieVerifier = $this->createSessionCookieVerifier();
@@ -413,7 +428,11 @@ final class Factory
 
         return new Database(
             GuzzleUtils::uriFor($databaseUrl),
-            new Database\ApiClient($http, $resourceUrlBuilder),
+            new Database\ApiClient(
+                $http,
+                $resourceUrlBuilder,
+                new DatabaseApiExceptionConverter($this->errorResponseParser),
+            ),
         );
     }
 
@@ -423,7 +442,13 @@ final class Factory
             'base_uri' => "https://firebaseremoteconfig.googleapis.com/v1/projects/{$this->getProjectId()}/remoteConfig",
         ]);
 
-        return new RemoteConfig(new RemoteConfig\ApiClient($this->getProjectId(), $http));
+        return new RemoteConfig(
+            new RemoteConfig\ApiClient(
+                $this->getProjectId(),
+                $http,
+                new RemoteConfigApiExceptionConverter($this->errorResponseParser),
+            ),
+        );
     }
 
     public function createMessaging(): Contract\Messaging

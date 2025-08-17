@@ -32,7 +32,7 @@ final class DT
         $now = time();
 
         if ($value instanceof DateTimeInterface) {
-            $result = $result = DateTimeImmutable::createFromFormat('U.u', $value->format('U.u'));
+            $result = DateTimeImmutable::createFromFormat('U.u', $value->format('U.u'));
 
             if ($result instanceof DateTimeImmutable) {
                 return $result->setTimezone($tz);

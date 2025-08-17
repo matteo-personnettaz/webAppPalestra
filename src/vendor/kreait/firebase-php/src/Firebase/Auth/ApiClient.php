@@ -38,8 +38,6 @@ class ApiClient
 
     private readonly AuthResourceUrlBuilder $authResourceUrlBuilder;
 
-    private readonly AuthApiExceptionConverter $errorHandler;
-
     /**
      * @param non-empty-string $projectId
      * @param non-empty-string|null $tenantId
@@ -50,9 +48,8 @@ class ApiClient
         private readonly ClientInterface $client,
         private readonly GuzzleHandler $signInHandler,
         private readonly ClockInterface $clock,
+        private readonly AuthApiExceptionConverter $errorHandler,
     ) {
-        $this->errorHandler = new AuthApiExceptionConverter();
-
         $this->awareAuthResourceUrlBuilder = $tenantId !== null
             ? TenantAwareAuthResourceUrlBuilder::forProjectAndTenant($projectId, $tenantId)
             : ProjectAwareAuthResourceUrlBuilder::forProject($projectId);
@@ -91,7 +88,7 @@ class ApiClient
 
         return $this->requestApi($url, [
             'localId' => $uid,
-            'customAttributes' => JSON::encode((object) $claims),
+            'customAttributes' => Json::encode((object) $claims),
         ]);
     }
 

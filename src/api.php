@@ -8,9 +8,8 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 header('Content-Type: application/json; charset=utf-8');
 
-/* ===== Composer & Firebase Auth ===== */
+/* ===== Composer (SOLO QUI) ===== */
 require __DIR__ . '/vendor/autoload.php';
-$auth = require __DIR__ . '/firebase_admin.php'; // ritorna un'istanza di Kreait\Auth pronta
 
 /* ===== Helper: verifica token e restituisce UID ===== */
 function require_uid($auth): string {
@@ -28,12 +27,11 @@ function require_uid($auth): string {
   }
 }
 
-/* ===== API KEY (se ti serve ancora per compatibilità) ===== */
+/* ===== API KEY / ACTION / ENV ===== */
 $API_KEY = getenv('API_KEY') ?: 'override_me_in_prod';
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $key    = $_GET['key']    ?? $_POST['key']    ?? '';
 
-/* ===== ENV CONFIG ===== */
 $CFG = [
   'DB_NAME'   => getenv('DB_NAME')   ?: 'fitness_db',
   'DB_USER'   => getenv('DB_USER')   ?: '',
@@ -43,35 +41,24 @@ $CFG = [
   'DB_PORT'   => (int)(getenv('DB_PORT') ?: 3306),
 ];
 
-/* ===== ROUTE: ping / whoami / socketcheck (no DB) ===== */
-if ($action === 'ping') {
-  echo json_encode(['success'=>true,'message'=>'pong']); exit;
-}
-if ($action === 'whoami') {
-  echo json_encode([
-    'success'    => true,
-    'rev'        => getenv('K_REVISION') ?: 'n/a',
-    'has_socket' => $CFG['DB_SOCKET'] ?: 'n/a',
-  ]); exit;
-}
-if ($action === 'socketcheck') {
-  $sock = $CFG['DB_SOCKET'];
-  echo json_encode([
-    'success'     => true,
-    'dir_exists'  => is_dir('/cloudsql'),
-    'sock'        => $sock,
-    'sock_exists' => $sock ? file_exists($sock) : null,
-  ]); exit;
-}
+/* ===== Rotte pubbliche ===== */
+if ($action === 'ping')      { echo json_encode(['success'=>true,'message'=>'pong']); exit; }
+if ($action === 'whoami')    { echo json_encode(['success'=>true,'rev'=>getenv('K_REVISION') ?: 'n/a','has_socket'=>$CFG['DB_SOCKET'] ?: 'n/a']); exit; }
+if ($action === 'socketcheck'){ echo json_encode(['success'=>true,'dir_exists'=>is_dir('/cloudsql'),'sock'=>$CFG['DB_SOCKET'],'sock_exists'=>$CFG['DB_SOCKET']? file_exists($CFG['DB_SOCKET']) : null]); exit; }
 
-/* ===== Auth per le rotte che toccano il DB ===== */
-if (!in_array($action, ['ping','whoami','socketcheck','diag'], true)) {
+/* ===== Auth per le rotte protette ===== */
+$isPublic = in_array($action, ['ping','whoami','socketcheck','diag'], true);
+$auth = null;
+if (!$isPublic) {
   if ($key !== $API_KEY) {
     http_response_code(403);
     echo json_encode(['success'=>false,'error'=>'Chiave API non valida']); exit;
   }
-  $uid = require_uid($auth);
+  // CARICA QUI Firebase solo se serve
+  $auth = require __DIR__ . '/firebase_admin.php';
+  $uid  = require_uid($auth);
 }
+
 
 $stmt = $pdo->prepare("SELECT IS_ADMIN FROM UTENTI WHERE UID=?");
 $stmt->execute([$uid]);
