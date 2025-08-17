@@ -73,6 +73,10 @@ if (!in_array($action, ['ping','whoami','socketcheck','diag'], true)) {
   $uid = require_uid($auth);
 }
 
+$stmt = $pdo->prepare("SELECT IS_ADMIN FROM UTENTI WHERE UID=?");
+$stmt->execute([$uid]);
+$isAdmin = (bool)($stmt->fetchColumn() ?: 0);
+
 /* ===== PDO factory (socket > tcp) ===== */
 function connect_pdo(array $cfg): array {
   $opt = [
@@ -130,32 +134,37 @@ if ($action === 'diag') {
 /* ===== ROUTING ===== */
 try {
   switch ($action) {
-
     case 'bootstrap_user':
-      // richiede: Bearer token + API key
       $uid = require_uid($auth);
       $email = $_POST['email'] ?? null;
       $displayName = $_POST['displayName'] ?? null;
 
-      // crea tabella se non esiste (o falla creare via migration)
-      // CREATE TABLE UTENTI (UID VARCHAR(128) PRIMARY KEY, EMAIL VARCHAR(255), DISPLAY_NAME VARCHAR(255), D_CREATO TIMESTAMP DEFAULT CURRENT_TIMESTAMP, D_AGG TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
-
-      // upsert
       $sql = "INSERT INTO UTENTI (UID, EMAIL, DISPLAY_NAME)
               VALUES (?,?,?)
               ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), DISPLAY_NAME=VALUES(DISPLAY_NAME)";
       $stmt = $pdo->prepare($sql);
       $stmt->execute([$uid, $email, $displayName]);
-      echo json_encode(['success'=>true]);
+
+      $stmt = $pdo->prepare("SELECT IS_ADMIN FROM UTENTI WHERE UID=?");
+      $stmt->execute([$uid]);
+      $isAdmin = (bool)($stmt->fetchColumn() ?: 0);
+
+      echo json_encode(['success' => true, 'is_admin' => $isAdmin]);
       break;
 
 /* =========================
  *        CLIENTI (UID)
  * ========================= */
     case 'get_clienti':
-      $stmt = $pdo->prepare('SELECT ID_CLIENTE, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL
-                             FROM CLIENTI WHERE UID=? ORDER BY COGNOME, NOME');
-      $stmt->execute([$uid]);
+      if ($isAdmin) {
+        $stmt = $pdo->query('SELECT ID_CLIENTE, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL, UID
+                            FROM CLIENTI
+                            ORDER BY COGNOME, NOME');
+      } else {
+        $stmt = $pdo->prepare('SELECT ID_CLIENTE, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL
+                              FROM CLIENTI WHERE UID=? ORDER BY COGNOME, NOME');
+        $stmt->execute([$uid]);
+      }
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
 
@@ -328,12 +337,21 @@ try {
  *        APPUNTAMENTI (UID)
  * ========================= */
     case 'get_appuntamenti':
-      $stmt=$pdo->prepare("SELECT a.ID_APPUNTAMENTO,a.ID_CLIENTE,a.DATA_ORA,a.TIPOLOGIA,a.NOTE,c.NOME,c.COGNOME
-                           FROM APPUNTAMENTI a
-                           JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE AND c.UID=?
-                           WHERE a.UID=?
-                           ORDER BY a.DATA_ORA ASC");
-      $stmt->execute([$uid, $uid]);
+      if ($isAdmin) {
+        $stmt = $pdo->query("SELECT a.ID_APPUNTAMENTO,a.UID,a.ID_CLIENTE,a.DATA_ORA,a.TIPOLOGIA,a.NOTE,a.STATO,a.ID_SLOT,
+                                    c.NOME,c.COGNOME
+                            FROM APPUNTAMENTI a
+                            JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
+                            ORDER BY a.DATA_ORA ASC");
+      } else {
+        $stmt = $pdo->prepare("SELECT a.ID_APPUNTAMENTO,a.ID_CLIENTE,a.DATA_ORA,a.TIPOLOGIA,a.NOTE,a.STATO,a.ID_SLOT,
+                                      c.NOME,c.COGNOME
+                              FROM APPUNTAMENTI a
+                              JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE AND c.UID=?
+                              WHERE a.UID=?
+                              ORDER BY a.DATA_ORA ASC");
+        $stmt->execute([$uid, $uid]);
+      }
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
 
@@ -378,21 +396,212 @@ try {
       echo json_encode(['success'=>true]);
       break;
 
+    case 'get_fasce_disponibili':
+      $tipo  = $_GET['tipologia'] ?? $_POST['tipologia'] ?? null;
+      $dal   = $_GET['dal']       ?? $_POST['dal']       ?? null; // 'YYYY-MM-DD'
+      $al    = $_GET['al']        ?? $_POST['al']        ?? null; // 'YYYY-MM-DD'
+
+      $sql = "SELECT ID_SLOT, TIPOLOGIA, INIZIO, FINE, NOTE
+              FROM FASCE_APPUNTAMENTO
+              WHERE UID=? AND OCCUPATO=0 AND INIZIO >= NOW()";
+      $par = [$uid];
+
+      if ($tipo) { $sql .= " AND TIPOLOGIA=?"; $par[] = $tipo; }
+      if ($dal)  { $sql .= " AND DATE(INIZIO) >= ?"; $par[] = $dal; }
+      if ($al)   { $sql .= " AND DATE(INIZIO) <= ?"; $par[] = $al; }
+
+      $sql .= " ORDER BY INIZIO ASC";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute($par);
+      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      break;
+
+      case 'get_fasce_admin':
+        if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+        $tipo  = $_GET['tipologia'] ?? $_POST['tipologia'] ?? null;
+        $stato = $_GET['stato']     ?? $_POST['stato']     ?? null; // 'libere' | 'occupate' | 'tutte'
+        $dal   = $_GET['dal']       ?? $_POST['dal']       ?? null;
+        $al    = $_GET['al']        ?? $_POST['al']        ?? null;
+
+        $sql = "SELECT ID_SLOT, TIPOLOGIA, INIZIO, FINE, OCCUPATO, NOTE
+                FROM FASCE_APPUNTAMENTO
+                WHERE UID=?";
+        $par = [$uid];
+
+        if ($tipo)  { $sql .= " AND TIPOLOGIA=?"; $par[] = $tipo; }
+        if ($stato === 'libere')   { $sql .= " AND OCCUPATO=0"; }
+        if ($stato === 'occupate') { $sql .= " AND OCCUPATO=1"; }
+        if ($dal)   { $sql .= " AND DATE(INIZIO) >= ?"; $par[] = $dal; }
+        if ($al)    { $sql .= " AND DATE(INIZIO) <= ?"; $par[] = $al; }
+
+        $sql .= " ORDER BY INIZIO ASC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($par);
+        echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+        break;
+
+        case 'insert_fascia':
+          if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+          $tipologia = $_POST['tipologia'] ?? null;
+          $inizio    = $_POST['inizio']    ?? null; // 'YYYY-MM-DD HH:MM:SS'
+          $fine      = $_POST['fine']      ?? null;
+          $note      = $_POST['note']      ?? null;
+
+          if (!$tipologia || !$inizio || !$fine) {
+            http_response_code(400); echo json_encode(['success'=>false,'error'=>'Parametri tipologia/inizio/fine obbligatori']); break;
+          }
+
+          try {
+            $sql = "INSERT INTO FASCE_APPUNTAMENTO (UID, TIPOLOGIA, INIZIO, FINE, NOTE) VALUES (?,?,?,?,?)";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$uid, $tipologia, $inizio, $fine, ($note !== '' ? $note : null)]);
+            echo json_encode(['success'=>true,'id'=>$pdo->lastInsertId()]);
+          } catch (PDOException $e) {
+            // gestisce unique UX_FASCE_UID_TIME_TIPO
+            http_response_code(409);
+            echo json_encode(['success'=>false,'error'=>'Fascia duplicata o non valida','details'=>$e->getMessage()]);
+          }
+          break;
+
+        case 'delete_fascia':
+          if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+          $idSlot = (int)($_POST['id_slot'] ?? 0);
+          if (!$idSlot) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_slot obbligatorio']); break; }
+
+          $chk = $pdo->prepare("SELECT OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
+          $chk->execute([$idSlot, $uid]);
+          $row = $chk->fetch();
+          if (!$row) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Fascia non trovata']); break; }
+          if ((int)$row['OCCUPATO'] === 1) { http_response_code(409); echo json_encode(['success'=>false,'error'=>'Fascia occupata, non eliminabile']); break; }
+
+          $del = $pdo->prepare("DELETE FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
+          $del->execute([$idSlot, $uid]);
+          echo json_encode(['success'=>true]);
+          break;
+
+          case 'prenota_slot':
+            $idSlot    = (int)($_POST['id_slot'] ?? 0);
+            $idCliente = (int)($_POST['id_cliente'] ?? 0);
+            $note      = $_POST['note'] ?? null;
+
+            if (!$idSlot || !$idCliente) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_slot e id_cliente obbligatori']); break; }
+
+            // Check ownership cliente
+            $own = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?");
+            $own->execute([$idCliente, $uid]);
+            if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Cliente non trovato']); break; }
+
+            try {
+              $pdo->beginTransaction();
+
+              // Verifica slot libero dello stesso UID
+              $q = $pdo->prepare("SELECT TIPOLOGIA, INIZIO, OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=? FOR UPDATE");
+              $q->execute([$idSlot, $uid]);
+              $s = $q->fetch();
+              if (!$s) { $pdo->rollBack(); http_response_code(404); echo json_encode(['success'=>false,'error'=>'Fascia non trovata']); break; }
+              if ((int)$s['OCCUPATO'] === 1) { $pdo->rollBack(); http_response_code(409); echo json_encode(['success'=>false,'error'=>'Fascia già occupata']); break; }
+
+              // Crea appuntamento pendente legato allo slot
+              $ins = $pdo->prepare("INSERT INTO APPUNTAMENTI (UID, ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
+                                    VALUES (?,?,?,?,?,0,?)");
+              $ins->execute([$uid, $idCliente, $s['INIZIO'], $s['TIPOLOGIA'], ($note !== '' ? $note : null), $idSlot]);
+
+              // Marca fascia occupata
+              $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
+
+              $pdo->commit();
+
+              // TODO: invio mail all'admin (facoltativo)
+              // send_mail_admin_nuova_richiesta($uid, $idCliente, $s['INIZIO'], $s['TIPOLOGIA']);
+
+              echo json_encode(['success'=>true,'id_appuntamento'=>$pdo->lastInsertId()]);
+            } catch (Throwable $e) {
+              if ($pdo->inTransaction()) $pdo->rollBack();
+              http_response_code(500);
+              echo json_encode(['success'=>false,'error'=>'Errore prenotazione','details'=>$e->getMessage()]);
+            }
+            break;
+
+          case 'conferma_appuntamento':
+            if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+            $idApp = (int)($_POST['id_appuntamento'] ?? 0);
+            if (!$idApp) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_appuntamento obbligatorio']); break; }
+
+            $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=? AND UID=?");
+            $stmt->execute([$idApp, $uid]);
+            if ($stmt->rowCount() === 0) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato']); break; }
+
+            // TODO: invia mail al cliente (facoltativo)
+            echo json_encode(['success'=>true]);
+            break;
+
+          case 'rifiuta_appuntamento':
+            if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+            $idApp = (int)($_POST['id_appuntamento'] ?? 0);
+            if (!$idApp) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_appuntamento obbligatorio']); break; }
+
+            try {
+              $pdo->beginTransaction();
+
+              // prendi slot collegato
+              $q = $pdo->prepare("SELECT ID_SLOT FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? AND UID=? FOR UPDATE");
+              $q->execute([$idApp, $uid]);
+              $row = $q->fetch();
+              if (!$row) { $pdo->rollBack(); http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato']); break; }
+
+              // rifiuta
+              $u = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=2 WHERE ID_APPUNTAMENTO=? AND UID=?");
+              $u->execute([$idApp, $uid]);
+
+              // libera fascia se nessun altro appuntamento pendente/confermato la usa
+              if ($row['ID_SLOT']) {
+                $cnt = $pdo->prepare("SELECT COUNT(*) c FROM APPUNTAMENTI WHERE ID_SLOT=? AND UID=? AND STATO IN (0,1)");
+                $cnt->execute([(int)$row['ID_SLOT'], $uid]);
+                $c = (int)($cnt->fetch()['c'] ?? 0);
+                if ($c === 0) {
+                  $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=0 WHERE ID_SLOT=? AND UID=?")->execute([(int)$row['ID_SLOT'], $uid]);
+                }
+              }
+
+              $pdo->commit();
+              echo json_encode(['success'=>true]);
+            } catch (Throwable $e) {
+              if ($pdo->inTransaction()) $pdo->rollBack();
+              http_response_code(500);
+              echo json_encode(['success'=>false,'error'=>'Errore rifiuto','details'=>$e->getMessage()]);
+            }
+            break;
+
+
+
 /* =========================
  *   SCHEDE (TESTA) (UID) — SCHEDE_TESTA
  * ========================= */
     case 'get_schede_testa':
       $clientId = isset($_GET['clientId']) ? (int)$_GET['clientId'] : (isset($_POST['clientId']) ? (int)$_POST['clientId'] : 0);
-      if ($clientId) {
-        $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
-        $chk->execute([$clientId, $uid]);
-        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
 
-        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? AND ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
-        $stmt->execute([$uid, $clientId]);
+      if ($isAdmin) {
+        if ($clientId) {
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
+          $stmt->execute([$clientId]);
+        } else {
+          $stmt = $pdo->query("SELECT * FROM SCHEDE_TESTA ORDER BY ID_SCHEDAT DESC");
+        }
       } else {
-        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? ORDER BY ID_SCHEDAT DESC");
-        $stmt->execute([$uid]);
+        if ($clientId) {
+          $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
+          $chk->execute([$clientId, $uid]);
+          if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Client not found']); break; }
+
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? AND ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
+          $stmt->execute([$uid, $clientId]);
+        } else {
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_TESTA WHERE UID=? ORDER BY ID_SCHEDAT DESC");
+          $stmt->execute([$uid]);
+        }
       }
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
@@ -450,15 +659,20 @@ try {
  *  VOCI DI SCHEDA (UID) — SCHEDE_DETTA
  * ========================= */
     case 'get_voci_scheda':
-      $idScheda = (int)($_GET['id_schedat'] ?? $_POST['id_schedat'] ?? 0);
-      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_schedat mancante']); break; }
+      $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
+      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_scheda mancante']); break; }
 
-      $own = $pdo->prepare("SELECT 1 FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
-      $own->execute([$idScheda, $uid]);
-      if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
+      if ($isAdmin) {
+        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_DETTA WHERE ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
+        $stmt->execute([$idScheda]);
+      } else {
+        $own = $pdo->prepare("SELECT 1 FROM SCHEDE_TESTA WHERE ID_SCHEDAT=? AND UID=?");
+        $own->execute([$idScheda, $uid]);
+        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
 
-      $stmt = $pdo->prepare("SELECT * FROM SCHEDE_DETTA WHERE UID=? AND ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
-      $stmt->execute([$uid, $idScheda]);
+        $stmt = $pdo->prepare("SELECT * FROM SCHEDE_DETTA WHERE UID=? AND ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
+        $stmt->execute([$uid, $idScheda]);
+      }
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
 
