@@ -2,15 +2,17 @@
 FROM composer:2 AS deps
 WORKDIR /app
 
-# Copia solo i file Composer per sfruttare la cache Docker
+# Copio solo i file Composer per sfruttare la cache
 COPY src/composer.json src/composer.lock* ./
-RUN composer install --no-dev --prefer-dist --no-progress --no-interaction
+RUN composer install --no-dev --prefer-dist --no-progress --no-interaction --optimize-autoloader
 
-# ===== STAGE 2: runtime PHP + Apache =====
-FROM php:8.1-apache
+# ===== STAGE 2: runtime PHP + Apache (AGGIORNATO A 8.3) =====
+FROM php:8.3-apache
 
 # 1) Estensioni necessarie
-RUN docker-php-ext-install pdo_mysql opcache && a2enmod rewrite
+RUN apt-get update && apt-get install -y libzip-dev \
+ && docker-php-ext-install pdo_mysql opcache zip \
+ && a2enmod rewrite headers
 
 # 2) Timezone e opcache
 RUN set -eux; \
@@ -30,15 +32,15 @@ ENV PORT 8080
 RUN sed -ri "s/Listen 80/Listen ${PORT}/g" /etc/apache2/ports.conf \
  && sed -ri "s/:80/:${PORT}/g" /etc/apache2/sites-available/*.conf
 
-# 4) Copia vendor dall'immagine deps (Composer) e poi i sorgenti
+# 4) Document root + copy
 WORKDIR /var/www/html
-# dopo WORKDIR /var/www/html, prima della COPY finale va bene lo stesso
 RUN mkdir -p /var/www/html/secure && chown -R www-data:www-data /var/www/html
 
+# Vendor dalla stage deps + sorgenti
 COPY --from=deps /app/vendor /var/www/html/vendor
 COPY src/ /var/www/html/
 
-# (facoltativo) Permessi più sicuri
+# Permessi
 RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 8080
