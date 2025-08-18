@@ -593,8 +593,8 @@ try {
         break;
       }
 
-      $chk = $pdo->prepare("SELECT OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
-      $chk->execute([$idSlot, $uid]);
+      $chk = $pdo->prepare("SELECT OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=?");
+      $chk->execute([$idSlot]);
       $row = $chk->fetch();
       if (!$row) {
         http_response_code(404);
@@ -607,8 +607,8 @@ try {
         break;
       }
 
-      $del = $pdo->prepare("DELETE FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=?");
-      $del->execute([$idSlot, $uid]);
+      $del = $pdo->prepare("DELETE FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=?");
+      $del->execute([$idSlot]);
       echo json_encode(['success' => true]);
       break;
 
@@ -624,8 +624,8 @@ try {
       }
 
       // Check ownership cliente
-      $own = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?");
-      $own->execute([$idCliente, $uid]);
+      $own = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=?");
+      $own->execute([$idCliente]);
       if (!$own->fetch()) {
         http_response_code(404);
         echo json_encode(['success' => false, 'error' => 'Cliente non trovato']);
@@ -636,8 +636,8 @@ try {
         $pdo->beginTransaction();
 
         // Verifica slot libero dello stesso UID
-        $q = $pdo->prepare("SELECT TIPOLOGIA, INIZIO, OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? AND UID=? FOR UPDATE");
-        $q->execute([$idSlot, $uid]);
+        $q = $pdo->prepare("SELECT TIPOLOGIA, INIZIO, OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? FOR UPDATE");
+        $q->execute([$idSlot]);
         $s = $q->fetch();
         if (!$s) {
           $pdo->rollBack();
@@ -686,8 +686,8 @@ try {
         break;
       }
 
-      $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=? AND UID=?");
-      $stmt->execute([$idApp, $uid]);
+      $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=?");
+      $stmt->execute([$idApp]);
       if ($stmt->rowCount() === 0) {
         http_response_code(404);
         echo json_encode(['success' => false, 'error' => 'Appuntamento non trovato']);
@@ -715,8 +715,8 @@ try {
         $pdo->beginTransaction();
 
         // prendi slot collegato
-        $q = $pdo->prepare("SELECT ID_SLOT FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? AND UID=? FOR UPDATE");
-        $q->execute([$idApp, $uid]);
+        $q = $pdo->prepare("SELECT ID_SLOT FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=? FOR UPDATE");
+        $q->execute([$idApp]);
         $row = $q->fetch();
         if (!$row) {
           $pdo->rollBack();
@@ -726,16 +726,16 @@ try {
         }
 
         // rifiuta
-        $u = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=2 WHERE ID_APPUNTAMENTO=? AND UID=?");
-        $u->execute([$idApp, $uid]);
+        $u = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=2 WHERE ID_APPUNTAMENTO=?");
+        $u->execute([$idApp]);
 
         // libera fascia se nessun altro appuntamento pendente/confermato la usa
         if ($row['ID_SLOT']) {
-          $cnt = $pdo->prepare("SELECT COUNT(*) c FROM APPUNTAMENTI WHERE ID_SLOT=? AND UID=? AND STATO IN (0,1)");
-          $cnt->execute([(int)$row['ID_SLOT'], $uid]);
+          $cnt = $pdo->prepare("SELECT COUNT(*) c FROM APPUNTAMENTI WHERE ID_SLOT=? AND STATO IN (0,1)");
+          $cnt->execute([(int)$row['ID_SLOT']]);
           $c = (int)($cnt->fetch()['c'] ?? 0);
           if ($c === 0) {
-            $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=0 WHERE ID_SLOT=? AND UID=?")->execute([(int)$row['ID_SLOT'], $uid]);
+            $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=0 WHERE ID_SLOT=?")->execute([(int)$row['ID_SLOT']]);
           }
         }
 
