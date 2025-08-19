@@ -508,24 +508,59 @@ try {
       break;
 
 
-    case 'delete_appuntamento': {
-      $idApp = (int)($_POST['id'] ?? 0);
-      // ownership
-      $chk = $pdo->prepare("SELECT 1
-                            FROM APPUNTAMENTI a
-                            JOIN CLIENTI c ON c.ID_CLIENTE=a.ID_CLIENTE
-                            WHERE a.ID_APPUNTAMENTO=? AND c.UID=?");
-      $chk->execute([$idApp, $uid]);
-      if (!$chk->fetch()) {
-        http_response_code(404);
-        echo json_encode(['success'=>false,'error'=>'Appointment not found']);
+    case 'delete_appuntamento':
+      $id = (int)($_POST['id'] ?? 0); // <-- il client manda 'id'
+      if (!$id) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametro id mancante']);
         break;
       }
-      $stmt = $pdo->prepare("DELETE FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=?");
-      $stmt->execute([$idApp]);
-      echo json_encode(['success' => true]);
+
+      try {
+        // 1) Trova appuntamento + UID proprietario + slot
+        $q = $pdo->prepare("
+          SELECT A.ID_APPUNTAMENTO, A.ID_CLIENTE, A.ID_SLOT, C.UID
+          FROM APPUNTAMENTI A
+          JOIN CLIENTI C ON C.ID_CLIENTE = A.ID_CLIENTE
+          WHERE A.ID_APPUNTAMENTO = ?
+          LIMIT 1
+        ");
+        $q->execute([$id]);
+        $row = $q->fetch();
+
+        if (!$row) {
+          http_response_code(404);
+          echo json_encode(['success'=>false,'error'=>'Appointment not found']);
+          break;
+        }
+
+        // 2) Se non admin, verifica che l'appuntamento appartenga al tuo UID
+        if (!$isAdmin && $row['UID'] !== $uid) {
+          http_response_code(403);
+          echo json_encode(['success'=>false,'error'=>'Forbidden']);
+          break;
+        }
+
+        // 3) Cancella in transazione e libera la fascia
+        $pdo->beginTransaction();
+
+        $del = $pdo->prepare("DELETE FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=?");
+        $del->execute([$id]);
+
+        if (!empty($row['ID_SLOT'])) {
+          $upd = $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=0 WHERE ID_SLOT=?");
+          $upd->execute([$row['ID_SLOT']]);
+        }
+
+        $pdo->commit();
+        echo json_encode(['success'=>true]);
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Errore cancellazione','details'=>$e->getMessage()]);
+      }
       break;
-    }
+
 
     case 'get_fasce_disponibili': {
       $tipo  = $_GET['tipologia'] ?? $_POST['tipologia'] ?? null;
