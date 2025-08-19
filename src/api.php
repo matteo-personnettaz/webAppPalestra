@@ -476,6 +476,28 @@ try {
       break;
     }
 
+    case 'update_appuntamento_note':
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success'=>false,'error'=>'Solo admin']);
+        break;
+      }
+      $id = (int)($_POST['id'] ?? 0);
+      $note = ($_POST['note'] ?? '');
+      $note = ($note === '') ? null : $note;
+
+      $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET NOTE=? WHERE ID_APPUNTAMENTO=?");
+      $stmt->execute([$note, $id]);
+
+      if ($stmt->rowCount() === 0) {
+        http_response_code(404);
+        echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato']);
+        break;
+      }
+      echo json_encode(['success'=>true]);
+      break;
+
+
     case 'delete_appuntamento': {
       $idApp = (int)($_POST['id'] ?? 0);
       // ownership
