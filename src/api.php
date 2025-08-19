@@ -685,20 +685,24 @@ try {
           break;
         }
 
-        // 4) INSERT senza UID
+        // 4) stato: admin -> confermato (1), altrimenti pendente (0)
+        $stato = $isAdmin ? 1 : 0;
+
+        // 5) insert senza UID
         $ins = $pdo->prepare("
           INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
-          VALUES (?,?,?,?,0,?)
+          VALUES (?,?,?,?,?,?)
         ");
         $ins->execute([
           $idCliente,
           $s['INIZIO'],
           $s['TIPOLOGIA'] ?? 'SED_ORDI',
           ($note !== '' ? $note : null),
+          $stato,
           $idSlot,
         ]);
 
-        // 5) Marca fascia occupata
+        // 6) Marca fascia occupata
         $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
 
         $pdo->commit();
