@@ -419,19 +419,20 @@ try {
      * ========================= */
     case 'get_appuntamenti':
       if ($isAdmin) {
-        $stmt = $pdo->query("SELECT a.ID_APPUNTAMENTO,a.UID,a.ID_CLIENTE,a.DATA_ORA,a.TIPOLOGIA,a.NOTE,a.STATO,a.ID_SLOT,
-                                    c.NOME,c.COGNOME
-                            FROM APPUNTAMENTI a
-                            JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
-                            ORDER BY a.DATA_ORA ASC");
-      } else {
-        // NOTA: rimuoviamo il filtro a.UID=? e usiamo SOLO la proprietà del cliente
-        $stmt = $pdo->prepare("SELECT a.ID_APPUNTAMENTO,a.ID_CLIENTE,a.DATA_ORA,a.TIPOLOGIA,a.NOTE,a.STATO,a.ID_SLOT,
-                                      c.NOME,c.COGNOME
+        $stmt = $pdo->query("SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, a.STATO, a.ID_SLOT,
+                                    c.NOME, c.COGNOME
                               FROM APPUNTAMENTI a
                               JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
-                              WHERE c.UID=?
-                              ORDER BY a.DATA_ORA ASC");
+                              ORDER BY a.DATA_ORA ASC
+                              ");
+      } else {
+        // NOTA: rimuoviamo il filtro a.UID=? e usiamo SOLO la proprietà del cliente
+        $stmt = $pdo->prepare("SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, a.STATO, a.ID_SLOT,
+                                      c.NOME, c.COGNOME
+                                FROM APPUNTAMENTI a
+                                JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
+                                WHERE c.UID=?
+                                ORDER BY a.DATA_ORA ASC");
         $stmt->execute([$uid]);
       }
       echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
@@ -632,7 +633,7 @@ try {
         break;
       }
 
-      // 1) Recupera UID del cliente
+      // 1) Recupera UID del cliente (serve solo per i controlli, NON si salva su APPUNTAMENTI)
       $own = $pdo->prepare("SELECT UID FROM CLIENTI WHERE ID_CLIENTE=?");
       $own->execute([$idCliente]);
       $rowCli = $own->fetch();
@@ -643,7 +644,7 @@ try {
       }
       $clienteUid = (string)$rowCli['UID'];
 
-      // 1bis) Se NON admin, il cliente deve appartenere all’utente loggato
+      // Se NON admin, il cliente deve appartenere all’utente loggato
       if (!$isAdmin && $clienteUid !== $uid) {
         http_response_code(403);
         echo json_encode(['success' => false, 'error' => 'Cliente non appartenente all’utente']);
@@ -670,10 +671,12 @@ try {
           break;
         }
 
-        // 3) (Opzionale) Evita doppioni: stesso cliente, stessa data/ora pendente/confermato
-        $dupe = $pdo->prepare("SELECT COUNT(*) c 
-                              FROM APPUNTAMENTI 
-                              WHERE ID_CLIENTE=? AND DATA_ORA=? AND STATO IN (0,1)");
+        // 3) Evita doppioni: stesso cliente, stessa data/ora pendente/confermato
+        $dupe = $pdo->prepare("
+          SELECT COUNT(*) c
+          FROM APPUNTAMENTI
+          WHERE ID_CLIENTE=? AND DATA_ORA=? AND STATO IN (0,1)
+        ");
         $dupe->execute([$idCliente, $s['INIZIO']]);
         if ((int)($dupe->fetch()['c'] ?? 0) > 0) {
           $pdo->rollBack();
@@ -682,24 +685,23 @@ try {
           break;
         }
 
-        // 4) Inserisci appuntamento con UID del cliente (NON dell’admin)
-        $ins = $pdo->prepare("INSERT INTO APPUNTAMENTI 
-                                (UID, ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
-                              VALUES (?,?,?,?,?,0,?)");
+        // 4) INSERT senza UID
+        $ins = $pdo->prepare("
+          INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
+          VALUES (?,?,?,?,0,?)
+        ");
         $ins->execute([
-          $clienteUid,
           $idCliente,
           $s['INIZIO'],
           $s['TIPOLOGIA'] ?? 'SED_ORDI',
           ($note !== '' ? $note : null),
-          $idSlot
+          $idSlot,
         ]);
 
-        // 5) Marca la fascia come occupata
+        // 5) Marca fascia occupata
         $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
 
         $pdo->commit();
-
         echo json_encode(['success' => true, 'id_appuntamento' => $pdo->lastInsertId()]);
       } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -707,6 +709,7 @@ try {
         echo json_encode(['success' => false, 'error' => 'Errore prenotazione', 'details' => $e->getMessage()]);
       }
       break;
+
 
 
     case 'conferma_appuntamento': {
