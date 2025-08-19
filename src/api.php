@@ -157,8 +157,7 @@ if (!$isPublic) {
   try {
     $stmt = $pdo->prepare("SELECT RUOLO FROM UTENTI WHERE UID=?");
     $stmt->execute([$uid]);
-    $ruolo = (string)($stmt->fetchColumn() ?: '');
-    $isAdmin = ($ruolo === 'ADMIN');
+    $isAdmin = (strtoupper((string)($stmt->fetchColumn() ?: 'CLIENTE')) === 'ADMIN');
   } catch (Throwable $e) {
     $isAdmin = false;
   }
@@ -182,21 +181,31 @@ try {
     /* =========================
      *  Bootstrap utente (crea/aggiorna riga UTENTI)
      * ========================= */
-    case 'bootstrap_user': {
-      $email = $_POST['email'] ?? null;
-      $ruolo = $_POST['ruolo'] ?? 'CLIENTE'; // default
-      $sql = "INSERT INTO UTENTI (UID, EMAIL, RUOLO)
-              VALUES (?,?,?)
-              ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), RUOLO=VALUES(RUOLO)";
-      $stmt = $pdo->prepare($sql);
-      $stmt->execute([$uid, $email, $ruolo]);
+    case 'bootstrap_user':
+      $email = trim($_POST['email'] ?? '');
+      $displayName = trim($_POST['displayName'] ?? '');
 
+      // opzionale: promozione automatica via env (es. "owner@site.com,admin@site.com")
+      $adminEmails = array_filter(array_map('trim', explode(',', getenv('ADMIN_EMAILS') ?: '')));
+      $shouldBeAdmin = $email !== '' && in_array(strtolower($email), array_map('strtolower', $adminEmails), true);
+
+      // Se esiste già, aggiorno solo email (e display_name se la colonna esiste),
+      // SENZA toccare RUOLO. Se non esiste, lo creo come CLIENTE (o ADMIN se whitelisted).
+      // Nota: se non hai la colonna DISPLAY_NAME, rimuovi dal SQL i riferimenti a DISPLAY_NAME.
+      $sql = "INSERT INTO UTENTI (UID, EMAIL, RUOLO)
+              VALUES (?, ?, ?)
+              ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL)";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute([$uid, $email, $shouldBeAdmin ? 'ADMIN' : 'CLIENTE']);
+
+      // Rileggi il ruolo effettivo (non declassare eventuali admin esistenti)
       $stmt = $pdo->prepare("SELECT RUOLO FROM UTENTI WHERE UID=?");
       $stmt->execute([$uid]);
-      $isAdmin = ((string)$stmt->fetchColumn() === 'ADMIN');
-      echo json_encode(['success' => true, 'is_admin' => $isAdmin]);
+      $ruolo = strtoupper((string)($stmt->fetchColumn() ?: 'CLIENTE'));
+      $isAdmin = ($ruolo === 'ADMIN');
+
+      echo json_encode(['success' => true, 'is_admin' => $isAdmin, 'ruolo' => $ruolo]);
       break;
-    }
 
     /* =========================
      *        CLIENTI
