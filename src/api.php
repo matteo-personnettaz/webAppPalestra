@@ -15,6 +15,7 @@ header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/send_email.php';
 
+
 /* ===== Helpers ===== */
 function read_authorization_header(): string {
   $hdr =
