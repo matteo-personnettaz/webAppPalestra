@@ -29,6 +29,10 @@ steps:
           --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_SOCKET=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena \
           --set-secrets DB_PASS=db-pass:latest,API_KEY=api-key:latest,FIREBASE_CREDENTIALS_JSON=firebase-admin-sa:latest
 
+          --set-env-vars CLOUD_SQL_CONNECTION_NAME=$_INSTANCE,DB_SOCKET=/cloudsql/$_INSTANCE,DB_NAME=fitness_db,DB_USER=palestra_athena,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_FROM_NAME=Palestra\ Athena \
+          --set-secrets DB_PASS=db-pass:latest,API_KEY=api-key:latest,FIREBASE_CREDENTIALS_JSON=firebase-admin-sa:latest,SMTP_USER=smtp-user:latest,SMTP_PASS=smtp-pass:latest,SMTP_FROM=smtp-from:latest
+
+
 images:
   - "gcr.io/$PROJECT_ID/$_SERVICE:$COMMIT_SHA"
 
