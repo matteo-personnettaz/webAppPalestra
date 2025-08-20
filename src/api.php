@@ -762,7 +762,7 @@ try {
         if (!$isAdmin) {
           $admins = array_filter(array_map('trim', explode(',', getenv('ADMIN_NOTIFY_EMAILS') ?: '')));
           if ($admins) {
-            $body = '<p>Nuova richiesta prenotazione slot.</p>'
+            $body = '<p>Nuova richiesta prenotazione</p>'
                   . '<ul>'
                   . '<li>ID Cliente: ' . (int)$idCliente . '</li>'
                   . '<li>Inizio: ' . htmlspecialchars($s['INIZIO']) . '</li>'
