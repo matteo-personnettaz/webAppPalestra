@@ -142,7 +142,7 @@ if ($action === 'diag') {
   exit;
 }
 
-/* ===== Auth per rotte protette ===== */
+/* ===== Auth per rotte protette ===== */ 
 $isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag', 'email_test'], true);
 
 $uid = null; $isAdmin = false; $auth = null;
