@@ -210,13 +210,17 @@ try {
       echo json_encode(['success' => true, 'is_admin' => $isAdmin, 'ruolo' => $ruolo]);
       break;
 
-      case 'email_test':
-        if (($key ?? '') !== $API_KEY) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Chiave API non valida']); break; }
-        $to = $_GET['to'] ?? $_POST['to'] ?? getenv('SMTP_USER');
-        $r  = send_email($to, 'Test SMTP Gmail', '<b>Funziona!</b> ✅', "Funziona! ✅", explode(',', getenv('ADMIN_EMAILS') ?: ''));
-        echo json_encode(['success' => $r['ok'] ?? false, 'details' => $r]);
+      case 'email_test': {
+        $to   = $_GET['to']   ?? $_POST['to']   ?? '';
+        $subj = $_GET['subj'] ?? 'Email di prova';
+        $res  = sendEmail([
+          'to'      => $to,
+          'subject' => $subj,
+          'html'    => '<p>Funziona! ✅</p>',
+        ]);
+        echo json_encode(['success' => $res['ok'] === true, 'details' => $res]);
         break;
-
+      }
 
     /* =========================
      *        CLIENTI
