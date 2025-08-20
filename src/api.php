@@ -362,7 +362,7 @@ try {
      *        ESERCIZI (globali)
      * ========================= */
     case 'get_esercizi': {
-      $stmt = $pdo->query('SELECT * FROM ESERCIZI ORDER BY NOME');
+      $stmt = $pdo->query('SELECT * FROM ESERCIZI ORDER BY GRUPPO_MUSCOLARE, NOME');
       echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
     }
@@ -408,11 +408,11 @@ try {
     /* =========================
      *   TIPI APPUNTAMENTO (globali)
      * ========================= */
-    case 'get_tipo_appuntamento': {
-      $stmt = $pdo->query("SELECT ID_AGGETTIVO AS CODICE, DESCRIZIONE FROM REFERENZECOMBO_0099 WHERE ID_CLASSE='TIPO_APPUNTAMENTO' ORDER BY ORDINE");
-      echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
-      break;
-    }
+    // case 'get_tipo_appuntamento': {
+    //   $stmt = $pdo->query("SELECT ID_AGGETTIVO AS CODICE, DESCRIZIONE FROM REFERENZECOMBO_0099 WHERE ID_CLASSE='TIPO_APPUNTAMENTO' ORDER BY ORDINE");
+    //   echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
+    //   break;
+    // }
 
     /* =========================
      *        APPUNTAMENTI
@@ -807,15 +807,15 @@ try {
 
       if ($isAdmin) {
         if ($clientId) {
-          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
           $stmt->execute([$clientId]);
         } else {
-          $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_SCHEDAT DESC");
+          $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_CLIENTE ASC,DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
         }
       } else {
         if ($clientId) {
           require_owns_client($pdo, $clientId, $uid);
-          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY ID_SCHEDAT DESC");
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
           $stmt->execute([$clientId]);
         } else {
           $stmt = $pdo->prepare("
@@ -823,7 +823,7 @@ try {
             FROM SCHEDE_ESERCIZI_TESTA st
             JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
             WHERE c.UID=?
-            ORDER BY st.ID_SCHEDAT DESC");
+            ORDER BY st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC");
           $stmt->execute([$uid]);
         }
       }
@@ -917,7 +917,7 @@ try {
         if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
       }
 
-      $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
+      $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAT=? ORDER BY ORDINE");
       $stmt->execute([$idScheda]);
       echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
