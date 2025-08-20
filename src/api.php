@@ -169,7 +169,7 @@ function require_owns_client(PDO $pdo, int $clientId, string $uid): void {
   $chk->execute([$clientId, $uid]);
   if (!$chk->fetch()) {
     http_response_code(404);
-    echo json_encode(['success' => false, 'error' => 'Client not found or not owned']);
+    echo json_encode(['success' => false, 'error' => 'require_owns_client - ID_CLIENTE not found or not owned']);
     exit;
   }
 }
@@ -833,7 +833,7 @@ try {
 
     case 'insert_scheda_testa': {
       $clientId = (int)($_POST['clientId'] ?? 0);
-      require_owns_client($pdo, $clientId, $uid);
+      if (!$isAdmin) { require_owns_client($pdo, $clientId, $uid); }
 
       $tipoScheda = $_POST['tipoScheda'] ?? null; // 'A','B','C'
       $validita   = (int)($_POST['validita'] ?? 2); // mesi
@@ -856,13 +856,15 @@ try {
       $idSchedat  = (int)($_POST['id_schedat'] ?? 0);
 
       // ownership della scheda (tramite cliente)
-      $chk = $pdo->prepare("
-        SELECT 1
-        FROM SCHEDE_ESERCIZI_TESTA st
-        JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-        WHERE st.ID_SCHEDAT=? AND c.UID=?");
-      $chk->execute([$idSchedat, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
+      if (!$isAdmin) {
+        $chk = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND c.UID=?");
+        $chk->execute([$idSchedat, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      }
 
       $tipoScheda = $_POST['tipoScheda'] ?? null;
       $validita   = (int)($_POST['validita'] ?? 2);
@@ -882,14 +884,15 @@ try {
 
     case 'delete_scheda_testa': {
       $id = (int)($_POST['id'] ?? 0);
-      $chk = $pdo->prepare("
-        SELECT 1
-        FROM SCHEDE_ESERCIZI_TESTA st
-        JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-        WHERE st.ID_SCHEDAT=? AND c.UID=?");
-      $chk->execute([$id, $uid]);
-      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
-
+      if (!$isAdmin) {
+        $chk = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND c.UID=?");
+        $chk->execute([$id, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      }
       $stmt = $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_TESTA WHERE ID_SCHEDAT=?");
       $stmt->execute([$id]);
       echo json_encode(['success'=>true]);
@@ -901,16 +904,18 @@ try {
      * ========================= */
     case 'get_voci_scheda': {
       $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
-      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_scheda mancante']); break; }
+      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'ID_SCHEDAT mancante']); break; }
 
-      // ownership check anche per client
-      $own = $pdo->prepare("
-        SELECT 1
-        FROM SCHEDE_ESERCIZI_TESTA st
-        JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-        WHERE st.ID_SCHEDAT=? AND c.UID=?");
-      $own->execute([$idScheda, $uid]);
-      if (!$own->fetch() && !$isAdmin) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
+      // ownership check
+      if (!$isAdmin) {
+        $own = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND c.UID=?");
+        $own->execute([$idScheda, $uid]);
+        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      }
 
       $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAT=? ORDER BY SETTIMANA, GIORNO, ORDINE, ID_SCHEDAD");
       $stmt->execute([$idScheda]);
@@ -920,18 +925,20 @@ try {
 
     case 'insert_voce_scheda': {
       $idScheda = (int)($_POST['id_schedat'] ?? 0);
-      $own = $pdo->prepare("
-        SELECT 1
-        FROM SCHEDE_ESERCIZI_TESTA st
-        JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-        WHERE st.ID_SCHEDAT=? AND c.UID=?");
-      $own->execute([$idScheda, $uid]);
-      if (!$own->fetch() && !$isAdmin) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Plan not found']); break; }
+      // ownership check
+      if (!$isAdmin) {
+        $own = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND c.UID=?");
+        $own->execute([$idScheda, $uid]);
+        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      }
 
       $serie       = (int)($_POST['serie']       ?? 0);
       $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
       $peso        = (int)($_POST['peso']      ?? 0);
-      $rest        = (int)($_POST['rest']        ?? 30);
       $ordine      = (int)($_POST['ordine']      ?? 0);
 
       $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA
@@ -953,14 +960,16 @@ try {
 
     case 'update_voce_scheda': {
       $idVoce   = (int)($_POST['id_voce'] ?? 0);
-      $chk = $pdo->prepare("
-        SELECT 1
-        FROM SCHEDE_ESERCIZI_DETTA sd
-        JOIN SCHEDE_ESERCIZI_TESTA st ON st.ID_SCHEDAT = sd.ID_SCHEDAT
-        JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-        WHERE sd.ID_SCHEDAD=? AND c.UID=?");
-      $chk->execute([$idVoce, $uid]);
-      if (!$chk->fetch() && !$isAdmin) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Item not found']); break; }
+      if (!$isAdmin) {
+        $chk = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_DETTA sd
+          JOIN SCHEDE_ESERCIZI_TESTA st ON st.ID_SCHEDAT = sd.ID_SCHEDAT
+          JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+          WHERE sd.ID_SCHEDAD=? AND c.UID=?");
+        $chk->execute([$idVoce, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'update_voce_scheda - ID_SCHEDAD or  not found']); break; }
+      }
 
       $serie       = (int)($_POST['serie']       ?? 0);
       $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
