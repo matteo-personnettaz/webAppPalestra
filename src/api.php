@@ -757,6 +757,28 @@ try {
         $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
 
         $pdo->commit();
+
+        // Notifica admin solo se è un cliente a prenotare
+        if (!$isAdmin) {
+          $admins = array_filter(array_map('trim', explode(',', getenv('ADMIN_NOTIFY_EMAILS') ?: '')));
+          if ($admins) {
+            $body = '<p>Nuova richiesta prenotazione slot.</p>'
+                  . '<ul>'
+                  . '<li>ID Cliente: ' . (int)$idCliente . '</li>'
+                  . '<li>Inizio: ' . htmlspecialchars($s['INIZIO']) . '</li>'
+                  . '<li>Tipo: ' . htmlspecialchars($s['TIPOLOGIA'] ?? 'SED_ORDI') . '</li>'
+                  . '</ul>';
+            foreach ($admins as $addr) {
+              @sendEmail([
+                'to'      => $addr,
+                'subject' => 'Richiesta prenotazione slot',
+                'html'    => $body,
+              ]);
+            }
+          }
+        }
+
+
         echo json_encode(['success' => true, 'id_appuntamento' => $pdo->lastInsertId()]);
       } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -775,6 +797,26 @@ try {
       $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=?");
       $stmt->execute([$idApp]);
       if ($stmt->rowCount() === 0) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato']); break; }
+
+      $info = $pdo->prepare("
+        SELECT a.DATA_ORA, COALESCE(a.TIPOLOGIA,'SED_ORDI') AS TIPO, c.EMAIL, c.NOME, c.COGNOME
+        FROM APPUNTAMENTI a
+        JOIN CLIENTI c ON c.ID_CLIENTE=a.ID_CLIENTE
+        WHERE a.ID_APPUNTAMENTO=?");
+      $info->execute([$idApp]);
+      $row = $info->fetch();
+      if (!empty($row['EMAIL'])) {
+        $body = '<p>Gentile ' . htmlspecialchars($row['NOME'] . ' ' . $row['COGNOME']) . ',</p>'
+              . '<p>la tua prenotazione è stata <b>approvata</b>.</p>'
+              . '<ul>'
+              . '<li>Quando: ' . htmlspecialchars($row['DATA_ORA']) . '</li>'
+              . '</ul>';
+        @sendEmail([
+          'to'      => $row['EMAIL'],
+          'subject' => 'Appuntamento confermato - ' . htmlspecialchars($row['DATA_ORA']),
+          'html'    => $body,
+        ]);
+      }
 
       echo json_encode(['success'=>true]);
       break;
@@ -806,6 +848,25 @@ try {
         }
 
         $pdo->commit();
+        
+        $info = $pdo->prepare("
+          SELECT a.DATA_ORA, COALESCE(a.TIPOLOGIA,'SED_ORDI') AS TIPO, c.EMAIL, c.NOME, c.COGNOME
+          FROM APPUNTAMENTI a
+          JOIN CLIENTI c ON c.ID_CLIENTE=a.ID_CLIENTE
+          WHERE a.ID_APPUNTAMENTO=?");
+        $info->execute([$idApp]);
+        $row = $info->fetch();
+        if (!empty($row['EMAIL'])) {
+          $body = '<p>Ciao ' . htmlspecialchars($row['NOME'] . ' ' . $row['COGNOME']) . ',</p>'
+                . '<p>purtroppo la tua prenotazione è stata <b>rifiutata</b>.</p>'
+                . '<p>Riprova a scegliere un altro slot dall’app.</p>';
+          @sendEmail([
+            'to'      => $row['EMAIL'],
+            'subject' => 'Appuntamento rifiutato',
+            'html'    => $body,
+          ]);
+        }
+
         echo json_encode(['success'=>true]);
       } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -862,6 +923,23 @@ try {
               VALUES (?,?,?,?,?,?)";
       $stmt = $pdo->prepare($sql);
       $stmt->execute([$clientId, $tipoScheda, $validita, $dataInizio, $note, $abil]);
+
+      // Recupera email cliente
+      $em = $pdo->prepare("SELECT EMAIL, NOME, COGNOME FROM CLIENTI WHERE ID_CLIENTE=?");
+      $em->execute([$clientId]);
+      $cli = $em->fetch();
+
+      if (!empty($cli['EMAIL'])) {
+        $body = '<p>Ciao ' . htmlspecialchars($cli['NOME'] . ' ' . $cli['COGNOME']) . ',</p>'
+              . '<p>è stata creata una nuova scheda <b>' . htmlspecialchars($tipoScheda ?: 'A') . '</b>'
+              . ' con validità <b>' . (int)$validita . ' mesi</b> e data inizio <b>' . htmlspecialchars($dataInizio) . '</b>.</p>'
+              . '<p>Buon allenamento! 💪</p>';
+        @sendEmail([
+          'to'      => $cli['EMAIL'],
+          'subject' => 'Nuova scheda allenamento',
+          'html'    => $body,
+        ]);
+      }
 
       echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
       break;
