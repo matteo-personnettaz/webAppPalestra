@@ -930,23 +930,20 @@ try {
 
       $serie       = (int)($_POST['serie']       ?? 0);
       $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
-      $peso        = (float)($_POST['peso']      ?? 0);
+      $peso        = (int)($_POST['peso']      ?? 0);
       $rest        = (int)($_POST['rest']        ?? 30);
       $ordine      = (int)($_POST['ordine']      ?? 0);
 
       $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA
-              (ID_SCHEDAT, ID_ESERCIZIO, SETTIMANA, GIORNO, SERIE, RIPETIZIONI, PESO, REST, ORDINE, NOTE)
-              VALUES (?,?,?,?,?,?,?,?,?,?)";
+              (ID_SCHEDAT, ID_ESERCIZIO, SERIE, RIPETIZIONI, PESO, ORDINE, NOTE)
+              VALUES (?,?,?,?,?,?,?)";
       $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $idScheda,
         $_POST['id_esercizio'] ?? null,
-        $_POST['settimana']    ?? 1,
-        $_POST['giorno']       ?? 1,
         $serie,
         $ripetizioni,
         $peso,
-        $rest,
         $ordine,
         ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
       ]);
@@ -967,22 +964,18 @@ try {
 
       $serie       = (int)($_POST['serie']       ?? 0);
       $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
-      $peso        = (float)($_POST['peso']      ?? 0);
-      $rest        = (int)($_POST['rest']        ?? 30);
+      $peso        = (int)($_POST['peso']      ?? 0);
       $ordine      = (int)($_POST['ordine']      ?? 0);
 
       $sql = "UPDATE SCHEDE_ESERCIZI_DETTA
-              SET ID_ESERCIZIO=?, SETTIMANA=?, GIORNO=?, SERIE=?, RIPETIZIONI=?, PESO=?, REST=?, ORDINE=?, NOTE=?
+              SET ID_ESERCIZIO=?, SERIE=?, RIPETIZIONI=?, PESO=?, ORDINE=?, NOTE=?
               WHERE ID_SCHEDAD=?";
       $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $_POST['id_esercizio'] ?? null,
-        $_POST['settimana']    ?? 1,
-        $_POST['giorno']       ?? 1,
         $serie,
         $ripetizioni,
         $peso,
-        $rest,
         $ordine,
         ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
         $idVoce,
