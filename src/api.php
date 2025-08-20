@@ -117,7 +117,8 @@ function connect_pdo(array $cfg): array {
 }
 
 /* ===== DB CONNECT (serve per diag e rotte protette) ===== */
-$needsDb = ($action === 'diag') || !in_array($action, ['ping', 'whoami', 'socketcheck'], true);
+$needsDb = ($action === 'diag') || !in_array($action, ['ping', 'whoami', 'socketcheck', 'email_test'], true);
+
 $pdo = null; $connKind = null; $dsnTried = null;
 if ($needsDb) { [$pdo, $connKind, $dsnTried] = connect_pdo($CFG); }
 
@@ -142,7 +143,8 @@ if ($action === 'diag') {
 }
 
 /* ===== Auth per rotte protette ===== */
-$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag'], true);
+$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag', 'email_test'], true);
+
 $uid = null; $isAdmin = false; $auth = null;
 
 if (!$isPublic) {
