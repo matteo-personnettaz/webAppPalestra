@@ -49,6 +49,35 @@ function require_uid($auth): string {
   }
 }
 
+if (!function_exists('generate_temp_password')) {
+  function generate_temp_password(int $len = 12): string {
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%-_=+';
+    $out = '';
+    for ($i=0; $i<$len; $i++) {
+      $out .= $alphabet[random_int(0, strlen($alphabet)-1)];
+    }
+    return $out;
+  }
+}
+
+// === Email di benvenuto/reset con password temporanea
+function email_temp_password(string $to, string $displayName, string $tempPassword): array {
+  $appName = getenv('APP_NAME') ?: 'Palestra Athena';
+  $loginUrl = getenv('APP_LOGIN_URL') ?: ''; // opzionale, es. https://tuo-dominio/login
+  $html = '
+    <p>Ciao '.htmlspecialchars($displayName ?: $to).',</p>
+    <p>Il tuo accesso a <b>'.$appName.'</b> è pronto.</p>
+    <p>Password temporanea: <b style="font-family:monospace;">'.htmlspecialchars($tempPassword).'</b></p>
+    <p>Per motivi di sicurezza ti consigliamo di cambiarla al primo accesso.</p>'.
+    ($loginUrl ? '<p>Accedi da qui: <a href="'.htmlspecialchars($loginUrl).'">'.$loginUrl.'</a></p>' : '').
+    '<p>Se non hai richiesto questo accesso contatta l\'amministratore.</p>';
+  return sendEmail([
+    'to'      => $to,
+    'subject' => 'Accesso alla piattaforma - password temporanea',
+    'html'    => $html,
+  ]);
+}
+
 /* ===== API KEY / ACTION / ENV ===== */
 $API_KEY = getenv('API_KEY') ?: 'override_me_in_prod';
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
@@ -183,8 +212,8 @@ try {
   switch ($action) {
 
     /* =========================
-     *  Bootstrap utente (crea/aggiorna riga UTENTI)
-     * ========================= */
+    *  Bootstrap utente (crea/aggiorna riga UTENTI)
+    * ========================= */
     case 'bootstrap_user':
       $email = trim($_POST['email'] ?? '');
       $displayName = trim($_POST['displayName'] ?? '');
@@ -211,17 +240,299 @@ try {
       echo json_encode(['success' => true, 'is_admin' => $isAdmin, 'ruolo' => $ruolo]);
       break;
 
-      case 'email_test': {
-        $to   = $_GET['to']   ?? $_POST['to']   ?? '';
-        $subj = $_GET['subj'] ?? 'Email di prova';
-        $res  = sendEmail([
-          'to'      => $to,
-          'subject' => $subj,
-          'html'    => '<p>Funziona! ✅</p>',
-        ]);
-        echo json_encode(['success' => $res['ok'] === true, 'details' => $res]);
+    case 'email_test': {
+      $to   = $_GET['to']   ?? $_POST['to']   ?? '';
+      $subj = $_GET['subj'] ?? 'Email di prova';
+      $res  = sendEmail([
+        'to'      => $to,
+        'subject' => $subj,
+        'html'    => '<p>Funziona! ✅</p>',
+      ]);
+      echo json_encode(['success' => $res['ok'] === true, 'details' => $res]);
+      break;
+    }
+
+    /* =========================
+    *  ADMIN: CREAZIONE CLIENTE + UTENTE
+    * ========================= */
+    case 'admin_create_client': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      // Dati cliente
+      $lastName   = trim($_POST['lastName']   ?? '');
+      $firstName  = trim($_POST['firstName']  ?? '');
+      $birthDate  = $_POST['birthDate']       ?? date('Y-m-d');
+      $address    = ($_POST['address']    ?? '') ?: null;
+      $fiscalCode = ($_POST['fiscalCode'] ?? '') ?: null;
+      $phone      = ($_POST['phone']      ?? '') ?: null;
+      $email      = trim($_POST['email']  ?? '');
+
+      if ($lastName === '' || $firstName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametri obbligatori mancanti o email non valida']);
         break;
       }
+
+      // Se esiste già in UTENTI con ruolo ADMIN → blocca (gli admin non devono avere riga in CLIENTI)
+      $chk = $pdo->prepare("SELECT RUOLO, UID FROM UTENTI WHERE EMAIL=?");
+      $chk->execute([$email]);
+      $rowUser = $chk->fetch();
+      if ($rowUser && strtoupper((string)$rowUser['RUOLO']) === 'ADMIN') {
+        http_response_code(409);
+        echo json_encode(['success'=>false,'error'=>'Email associata a un ADMIN: non creabile come CLIENTE']);
+        break;
+      }
+
+      // 1) Crea/aggiorna utente Firebase con password temporanea
+      $tempPass = generate_temp_password(12);
+      try {
+        if ($rowUser) {
+          // utente esiste in UTENTI, prova a prenderlo anche in Firebase
+          try {
+            $fu = $auth->getUserByEmail($email);
+            $uidNew = $fu->uid;
+            // imposta sempre password temporanea e displayName
+            $auth->updateUser($uidNew, [
+              'password'     => $tempPass,
+              'displayName'  => trim("$firstName $lastName"),
+              'disabled'     => false,
+            ]);
+          } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+            // in casi rari: riga UTENTI senza utente Firebase → crealo
+            $created = $auth->createUser([
+              'email'        => $email,
+              'password'     => $tempPass,
+              'displayName'  => trim("$firstName $lastName"),
+              'emailVerified'=> false,
+              'disabled'     => false,
+            ]);
+            $uidNew = $created->uid;
+          }
+        } else {
+          // non presente in UTENTI → crea direttamente in Firebase
+          try {
+            $fu = $auth->getUserByEmail($email);
+            $uidNew = $fu->uid;
+            $auth->updateUser($uidNew, [
+              'password'     => $tempPass,
+              'displayName'  => trim("$firstName $lastName"),
+              'disabled'     => false,
+            ]);
+          } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+            $created = $auth->createUser([
+              'email'        => $email,
+              'password'     => $tempPass,
+              'displayName'  => trim("$firstName $lastName"),
+              'emailVerified'=> false,
+              'disabled'     => false,
+            ]);
+            $uidNew = $created->uid;
+          }
+        }
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Errore Firebase: '.$e->getMessage()]);
+        break;
+      }
+
+      // 2) Transazione DB: UTENTI (CLIENTE) → CLIENTI (FK su UID)
+      try {
+        $pdo->beginTransaction();
+
+        // Upsert UTENTI come CLIENTE (mai declassare un ADMIN)
+        $pdo->prepare("
+          INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
+          VALUES (?,?, 'CLIENTE', 1)
+          ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL)
+        ")->execute([$uidNew, $email]);
+
+        // Inserisci CLIENTI (EMAIL e CF univoci)
+        $stmt = $pdo->prepare('
+          INSERT INTO CLIENTI
+            (UID, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
+          VALUES (?,?,?,?,?,?,?,?)
+        ');
+        $stmt->execute([
+          $uidNew, $lastName, $firstName, $birthDate, $address, $fiscalCode, $phone, $email
+        ]);
+
+        $clientId = (int)$pdo->lastInsertId();
+        $pdo->commit();
+
+        // 3) Email di benvenuto con password temporanea
+        $mailRes = email_temp_password($email, trim("$firstName $lastName"), $tempPass);
+
+        echo json_encode([
+          'success'     => ($mailRes['ok'] ?? false) === true,
+          'id_cliente'  => $clientId,
+          'uid'         => $uidNew,
+          'email_sent'  => $mailRes,
+        ]);
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode(['success'=>false,'error'=>'Creazione cliente fallita','details'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+
+    /* =========================
+    *  ADMIN: invia "benvenuto" (credenziali) a CLIENTE
+    * ========================= */
+    case 'admin_send_welcome': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      $clientId = (int)($_POST['clientId'] ?? 0);
+      if (!$clientId) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'clientId obbligatorio']); break; }
+
+      $q = $pdo->prepare("SELECT c.ID_CLIENTE, c.NOME, c.COGNOME, c.EMAIL, u.UID
+                          FROM CLIENTI c
+                          JOIN UTENTI u ON u.UID = c.UID
+                          WHERE c.ID_CLIENTE=? LIMIT 1");
+      $q->execute([$clientId]);
+      $row = $q->fetch();
+
+      if (!$row || !filter_var($row['EMAIL'], FILTER_VALIDATE_EMAIL)) {
+        http_response_code(404);
+        echo json_encode(['success'=>false,'error'=>'Cliente non trovato o email non valida']);
+        break;
+      }
+
+      $email    = (string)$row['EMAIL'];
+      $fullName = trim(($row['NOME'] ?? '').' '.($row['COGNOME'] ?? ''));
+      $uidUser  = (string)$row['UID'];
+
+      // Genera nuova password temporanea e aggiornala su Firebase
+      $tempPass = generate_temp_password(12);
+      try {
+        $auth->updateUser($uidUser, [
+          'password'    => $tempPass,
+          'displayName' => $fullName,
+          'disabled'    => false,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Firebase updateUser failed: '.$e->getMessage()]);
+        break;
+      }
+
+      // Email "benvenuto" con credenziali
+      $mailRes = email_welcome_credentials($email, $fullName, $email, $tempPass);
+      echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'details'=>$mailRes]);
+      break;
+    }
+
+    /* =========================
+    *  ADMIN: reset password (CLIENTE) e invio email
+    * ========================= */
+    case 'admin_reset_password': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      $clientId = (int)($_POST['clientId'] ?? 0);
+      if (!$clientId) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'clientId obbligatorio']); break; }
+
+      $q = $pdo->prepare("SELECT c.ID_CLIENTE, c.NOME, c.COGNOME, c.EMAIL, u.UID
+                          FROM CLIENTI c
+                          JOIN UTENTI u ON u.UID = c.UID
+                          WHERE c.ID_CLIENTE=? LIMIT 1");
+      $q->execute([$clientId]);
+      $row = $q->fetch();
+
+      if (!$row || !filter_var($row['EMAIL'], FILTER_VALIDATE_EMAIL)) {
+        http_response_code(404);
+        echo json_encode(['success'=>false,'error'=>'Cliente non trovato o email non valida']);
+        break;
+      }
+
+      $email    = (string)$row['EMAIL'];
+      $fullName = trim(($row['NOME'] ?? '').' '.($row['COGNOME'] ?? ''));
+      $uidUser  = (string)$row['UID'];
+
+      $tempPass = generate_temp_password(12);
+      try {
+        $auth->updateUser($uidUser, [
+          'password'    => $tempPass,
+          'displayName' => $fullName,
+          'disabled'    => false,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Firebase updateUser failed: '.$e->getMessage()]);
+        break;
+      }
+
+      // Email "reset password"
+      $mailRes = email_temp_password($email, $fullName, $tempPass);
+      echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'details'=>$mailRes]);
+      break;
+    }
+
+    /* =========================
+    *  ADMIN: crea UTENTE ADMIN (solo UTENTI + Firebase, nessuna riga CLIENTI)
+    * ========================= */
+    case 'admin_create_admin': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      $email = trim($_POST['email'] ?? '');
+      $name  = trim($_POST['displayName'] ?? '');
+
+      if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $name === '') {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Email o displayName non validi']);
+        break;
+      }
+
+      // Non consentire se esiste già come CLIENTE
+      $chkCli = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE EMAIL=? LIMIT 1");
+      $chkCli->execute([$email]);
+      if ($chkCli->fetch()) {
+        http_response_code(409);
+        echo json_encode(['success'=>false,'error'=>'Esiste già un CLIENTE con questa email']);
+        break;
+      }
+
+      $tempPass = generate_temp_password(12);
+      try {
+        // Crea/aggiorna in Firebase
+        try {
+          $fu    = $auth->getUserByEmail($email);
+          $uid   = $fu->uid;
+          $auth->updateUser($uid, [
+            'password'    => $tempPass,
+            'displayName' => $name,
+            'disabled'    => false,
+          ]);
+        } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+          $created = $auth->createUser([
+            'email'        => $email,
+            'password'     => $tempPass,
+            'displayName'  => $name,
+            'emailVerified'=> false,
+            'disabled'     => false,
+          ]);
+          $uid = $created->uid;
+        }
+
+        // Upsert in UTENTI come ADMIN
+        $pdo->prepare("
+          INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
+          VALUES (?,?, 'ADMIN', 1)
+          ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), RUOLO='ADMIN', ATTIVO=1
+        ")->execute([$uid, $email]);
+
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Creazione admin fallita: '.$e->getMessage()]);
+        break;
+      }
+
+      // Invia password temporanea
+      $mailRes = email_temp_password($email, $name, $tempPass);
+      echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'uid'=>$uid, 'details'=>$mailRes]);
+      break;
+    }
+
 
     /* =========================
      *        CLIENTI
