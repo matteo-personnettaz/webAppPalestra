@@ -418,7 +418,7 @@ try {
       }
 
       // Email "benvenuto" con credenziali
-      $mailRes = email_welcome_credentials($email, $fullName, $email, $tempPass);
+      $mailRes = email_temp_password($email, $fullName, $tempPass);
       echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'details'=>$mailRes]);
       break;
     }
@@ -1196,6 +1196,35 @@ try {
       if ($isAdmin) {
         if ($clientId) {
           $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
+          $stmt->execute([$clientId]);
+        } else {
+          $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_CLIENTE ASC,DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
+        }
+      } else {
+        if ($clientId) {
+          require_owns_client($pdo, $clientId, $uid);
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
+          $stmt->execute([$clientId]);
+        } else {
+          $stmt = $pdo->prepare("
+            SELECT st.*
+            FROM SCHEDE_ESERCIZI_TESTA st
+            JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+            WHERE c.UID=?
+            ORDER BY st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC");
+          $stmt->execute([$uid]);
+        }
+      }
+      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      break;
+    }
+
+    case 'get_schede_testa_attive': {
+      $clientId = isset($_GET['clientId']) ? (int)$_GET['clientId'] : (isset($_POST['clientId']) ? (int)$_POST['clientId'] : 0);
+
+      if ($isAdmin) {
+        if ($clientId) {
+          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? AND STATO='attivo' ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
           $stmt->execute([$clientId]);
         } else {
           $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_CLIENTE ASC,DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
