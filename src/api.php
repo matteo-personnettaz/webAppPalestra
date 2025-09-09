@@ -92,75 +92,73 @@ function render_brand_email(array $args): string {
   $footer    = $args['footer']    ?? 'Questa è una comunicazione automatica. Non rispondere a questa email.';
 
   // Nota: usiamo inline CSS per compatibilità con la maggior parte dei client
-  $html =
-'<!doctype html>
-<html lang="it">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width">
-<title>'.htmlspecialchars($title ?: $appName).'</title>
-</head>
-<body style="margin:0;padding:0;background:#f5f7fb;color:#111;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;">
-  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">
-    '.$appName.' – Notifica automatica
-  </span>
+  $html = '<!doctype html>
+    <html lang="it">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>'.htmlspecialchars($title ?: $appName).'</title>
+    </head>
+    <body style="margin:0;padding:0;background:#f5f7fb;color:#111;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;">
+      <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">
+        '.$appName.' – Notifica automatica
+      </span>
 
-  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="100%" style="padding:24px 12px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:640px;background:#ffffff;border-radius:12px;border:1px solid #e6e9f0;box-shadow:0 1px 2px rgba(16,24,40,.06);">
-          <tr>
-            <td style="padding:20px 24px;border-bottom:1px solid #eef1f6;">
-              <div style="font-size:18px;font-weight:700;">'.htmlspecialchars($appName).'</div>
-              '.($title ? '<div style="margin-top:6px;font-size:15px;color:#475467;font-weight:600;">'.htmlspecialchars($title).'</div>' : '').'
-            </td>
-          </tr>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="100%" style="padding:24px 12px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:640px;background:#ffffff;border-radius:12px;border:1px solid #e6e9f0;box-shadow:0 1px 2px rgba(16,24,40,.06);">
+              <tr>
+                <td style="padding:20px 24px;border-bottom:1px solid #eef1f6;">
+                  <div style="font-size:18px;font-weight:700;">'.htmlspecialchars($appName).'</div>
+                  '.($title ? '<div style="margin-top:6px;font-size:15px;color:#475467;font-weight:600;">'.htmlspecialchars($title).'</div>' : '').'
+                </td>
+              </tr>
 
-          <tr>
-            <td style="padding:24px;">
-              '.($greeting ? '<p style="margin:0 0 12px 0;">'.nl2br(htmlspecialchars($greeting)).'</p>' : '').'
-              '.($introHtml ?: '').'
+              <tr>
+                <td style="padding:24px;">
+                  '.($greeting ? '<p style="margin:0 0 12px 0;">'.nl2br(htmlspecialchars($greeting)).'</p>' : '').'
+                  '.($introHtml ?: '').'
 
-              '.(count($rows) ? '
-              <div style="margin:18px 0;padding:14px 16px;background:#f7fafc;border:1px solid #e6e9f0;border-radius:10px;">
-                '.implode('', array_map(function($r){
-                  $label = htmlspecialchars($r["label"] ?? "");
-                  $value = htmlspecialchars($r["value"] ?? "");
-                  return \'<div style="display:flex;justify-content:space-between;gap:16px;padding:6px 0;">
-                            <div style="color:#475467;font-size:13px;">\'.$label.\'</div>
-                            <div style="font-weight:700;font-size:13px;">\'.$value.\'</div>
-                          </div>\';
-                }, $rows)).'
-              </div>' : '').'
+                  '.(count($rows) ? '
+                  <div style="margin:18px 0;padding:14px 16px;background:#f7fafc;border:1px solid #e6e9f0;border-radius:10px;">
+                    '.implode('', array_map(function($r){
+                      $label = htmlspecialchars($r["label"] ?? "");
+                      $value = htmlspecialchars($r["value"] ?? "");
+                      return '<div style="display:flex;justify-content:space-between;gap:16px;padding:6px 0;">
+                                <div style="color:#475467;font-size:13px;">'.$label.'</div>
+                                <div style="font-weight:700;font-size:13px;">'.$value.'</div>
+                              </div>';
+                    }, $rows)).'
+                  </div>' : '').'
 
-              '.($ctaText && $ctaUrl ? '
-                <div style="margin:22px 0 10px 0;">
-                  <a href="'.htmlspecialchars($ctaUrl).'"
-                     style="display:inline-block;padding:12px 18px;background:#d32f2f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">
-                     '.htmlspecialchars($ctaText).'
-                  </a>
-                </div>
-                <div style="font-size:12px;color:#667085;">Se il pulsante non funziona, copia e incolla questo link nel browser:<br>
-                  <span style="word-break:break-all;color:#344054;">'.htmlspecialchars($ctaUrl).'</span>
-                </div>
-              ' : '').'
+                  '.($ctaText && $ctaUrl ? '
+                    <div style="margin:22px 0 10px 0;align-items:center;text-align:center;">
+                      <a href="'.htmlspecialchars($ctaUrl).'"
+                        style="display:inline-block;padding:12px 18px;background:#d32f2f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;box-shadow:0 1px 2px rgba(16,24,40,.1);">
+                        '.htmlspecialchars($ctaText).'
+                      </a>
+                    </div>
+                    <div style="font-size:12px;color:#667085;">Se il pulsante non funziona, copia e incolla questo link nel browser:
+                      <span style="word-break:break-all;color:#344054;">'.htmlspecialchars($ctaUrl).'</span>
+                    </div>
+                  ' : '').'
 
-              <hr style="border:none;border-top:1px solid #eef1f6;margin:20px 0;">
-              <p style="margin:0;font-size:12px;color:#667085;">'.$footer.'</p>
-            </td>
-          </tr>
+                  <hr style="border:none;border-top:1px solid #eef1f6;margin:20px 0;">
+                  <p style="margin:0;font-size:12px;color:#667085;text-align:center;">'.$footer.'</p>
+                </td>
+              </tr>
 
-        </table>
+            </table>
 
-        <div style="margin:12px 0 0 0;color:#98a2b3;font-size:12px;">
-          © '.date('Y').' '.htmlspecialchars($appName).'
-        </div>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>';
-
+            <div style="margin:12px 0 0 0;color:#98a2b3;font-size:12px;">
+              © '.date('Y').' '.htmlspecialchars($appName).'
+            </div>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>';
   return $html;
 }
 
@@ -175,15 +173,14 @@ function email_welcome_password(string $to, string $displayName, string $tempPas
     'appName'  => $appName,
     'title'    => 'Benvenuto nella piattaforma',
     'greeting' => 'Gentile '.($displayName !== '' ? $displayName : $to).',',
-    'introHtml'=> '<p style="margin:0 0 10px 0;">il tuo accesso a <b>'.$appName.'</b> è pronto. Di seguito trovi le credenziali iniziali. '
-                 .'Per motivi di sicurezza ti invitiamo a <b>cambiare la password</b> dopo il primo accesso.</p>',
+    'introHtml'=> '<p style="margin:0 0 10px 0;">L\'accesso per la WebApp <b>'.$appName.'</b> è pronto.<br>Di seguito sono riportate le credenziali per l’accesso.</p>',
     'rows'     => [
       ['label' => 'Email',               'value' => $to],
       ['label' => 'Password temporanea', 'value' => $tempPassword],
     ],
     'ctaText'  => 'Accedi all’app',
     'ctaUrl'   => $loginUrl,
-    'footer'   => 'Se non hai richiesto questo accesso contatta l’amministratore. La password temporanea è personale e scade al cambio credenziali.',
+    'footer'   => 'Se non hai richiesto questo accesso contatta l’amministratore.',
   ]);
 
   return sendEmail([
@@ -203,10 +200,9 @@ function email_temp_password(string $to, string $displayName, string $tempPasswo
 
   $html = render_brand_email([
     'appName'  => $appName,
-    'title'    => 'Reset password eseguito',
+    'title'    => 'Recupero della password',
     'greeting' => 'Gentile '.($displayName !== '' ? $displayName : $to).',',
-    'introHtml'=> '<p style="margin:0 0 10px 0;">come richiesto, abbiamo generato una <b>password temporanea</b>. '
-                 .'Usala per accedere e poi imposta una nuova password dalla sezione profilo.</p>',
+    'introHtml'=> '<p style="margin:0 0 10px 0;">come richiesto, abbiamo generato una <b>nuova password temporanea</b>.</p>',
     'rows'     => [
       ['label' => 'Email',               'value' => $to],
       ['label' => 'Password temporanea', 'value' => $tempPassword],
@@ -218,7 +214,7 @@ function email_temp_password(string $to, string $displayName, string $tempPasswo
 
   return sendEmail([
     'to'      => $to,
-    'subject' => 'Reset password – credenziali temporanee',
+    'subject' => 'Reset password - WebApp '.$appName.'',
     'html'    => $html,
   ]);
 }
