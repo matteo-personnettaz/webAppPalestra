@@ -173,12 +173,12 @@ function email_welcome_password(string $to, string $displayName, string $tempPas
     'appName'  => $appName,
     'title'    => 'Benvenuto nella piattaforma',
     'greeting' => 'Gentile '.($displayName !== '' ? $displayName : $to).',',
-    'introHtml'=> '<p style="margin:0 0 10px 0;">L&#39;accesso per la WebApp <b>'.$appName.'</b> è pronto.<br>Di seguito sono riportate le credenziali per l’accesso.</p>',
+    'introHtml'=> '<p style="margin:0 0 10px 0;">L&#39;accesso per la WebApp <b>'.$appName.'</b> &egrave pronto.<br>Di seguito sono riportate le credenziali per l&#39;accesso.</p>',
     'rows'     => [
       ['label' => 'Email',               'value' => $to],
       ['label' => 'Password temporanea', 'value' => $tempPassword],
     ],
-    'ctaText'  => 'Accedi all’app',
+    'ctaText'  => 'Accedi all&#39;app',
     'ctaUrl'   => $loginUrl,
     'footer'   => 'Se non hai richiesto questo accesso contatta l&#39;amministratore.',
   ]);
