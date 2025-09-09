@@ -63,17 +63,17 @@ if (!function_exists('generate_temp_password')) {
 // === Email di benvenuto/reset con password temporanea
 function email_temp_password(string $to, string $displayName, string $tempPassword): array {
   $appName = getenv('APP_NAME') ?: 'Palestra Athena';
-  $loginUrl = getenv('APP_LOGIN_URL') ?: ''; // opzionale, es. https://tuo-dominio/login
+  $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
   $html = '
-    <p>Ciao '.htmlspecialchars($displayName ?: $to).',</p>
-    <p>Il tuo accesso a <b>'.$appName.'</b> è pronto.</p>
-    <p>Password temporanea: <b style="font-family:monospace;">'.htmlspecialchars($tempPassword).'</b></p>
+    <p>Gentile '.htmlspecialchars($displayName ?: $to).',</p>
+    <p>Di seguito l\'accesso a <b>'.$appName.'</b>.</p>
+    <div><p>Password temporanea: <b style="font-family:monospace;">'.htmlspecialchars($tempPassword).'</b></p></div>
     <p>Per motivi di sicurezza ti consigliamo di cambiarla al primo accesso.</p>'.
     ($loginUrl ? '<p>Accedi da qui: <a href="'.htmlspecialchars($loginUrl).'">'.$loginUrl.'</a></p>' : '').
     '<p>Se non hai richiesto questo accesso contatta l\'amministratore.</p>';
   return sendEmail([
     'to'      => $to,
-    'subject' => 'Accesso alla piattaforma - password temporanea',
+    'subject' => 'Accesso WebApp Palestra Athena - Password Temporanea',
     'html'    => $html,
   ]);
 }
