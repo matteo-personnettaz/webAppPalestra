@@ -101,7 +101,7 @@ function render_brand_email(array $args): string {
     </head>
     <body style="margin:0;padding:0;background:#f5f7fb;color:#111;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;">
       <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">
-        '.$appName.' – Notifica automatica
+        '.$appName.' - Notifica automatica
       </span>
 
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="100%" style="padding:24px 12px;">
@@ -152,7 +152,7 @@ function render_brand_email(array $args): string {
             </table>
 
             <div style="margin:12px 0 0 0;color:#98a2b3;font-size:12px;">
-              © '.date('Y').' '.htmlspecialchars($appName).'
+              &copy '.date('Y').' '.htmlspecialchars($appName).'
             </div>
           </td>
         </tr>
@@ -173,14 +173,14 @@ function email_welcome_password(string $to, string $displayName, string $tempPas
     'appName'  => $appName,
     'title'    => 'Benvenuto nella piattaforma',
     'greeting' => 'Gentile '.($displayName !== '' ? $displayName : $to).',',
-    'introHtml'=> '<p style="margin:0 0 10px 0;">L\'accesso per la WebApp <b>'.$appName.'</b> è pronto.<br>Di seguito sono riportate le credenziali per l’accesso.</p>',
+    'introHtml'=> '<p style="margin:0 0 10px 0;">L&#39;accesso per la WebApp <b>'.$appName.'</b> è pronto.<br>Di seguito sono riportate le credenziali per l’accesso.</p>',
     'rows'     => [
       ['label' => 'Email',               'value' => $to],
       ['label' => 'Password temporanea', 'value' => $tempPassword],
     ],
     'ctaText'  => 'Accedi all’app',
     'ctaUrl'   => $loginUrl,
-    'footer'   => 'Se non hai richiesto questo accesso contatta l’amministratore.',
+    'footer'   => 'Se non hai richiesto questo accesso contatta l&#39;amministratore.',
   ]);
 
   return sendEmail([
@@ -209,7 +209,7 @@ function email_temp_password(string $to, string $displayName, string $tempPasswo
     ],
     'ctaText'  => 'Vai al login',
     'ctaUrl'   => $loginUrl,
-    'footer'   => 'Se non hai richiesto il reset, contatta subito l’amministratore.',
+    'footer'   => 'Se non hai richiesto il reset, contatta subito l&#39;amministratore.',
   ]);
 
   return sendEmail([
