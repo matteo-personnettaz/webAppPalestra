@@ -376,6 +376,64 @@ try {
       break;
     }
 
+    case 'provision_if_allowed': {
+      // PROTECTED BY API KEY
+      if ($key !== $API_KEY) {
+        http_response_code(403);
+        echo json_encode(['success'=>false,'error'=>'Chiave API non valida']);
+        break;
+      }
+
+      $email = trim($_POST['email'] ?? '');
+      if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Email non valida']);
+        break;
+      }
+
+      // Deve esistere almeno un cliente con questa email
+      $q = $pdo->prepare("SELECT ID_CLIENTE, UID FROM CLIENTI WHERE EMAIL=? LIMIT 1");
+      $q->execute([$email]);
+      $row = $q->fetch();
+      if (!$row) {
+        http_response_code(404);
+        echo json_encode(['success'=>false,'error'=>'Email non presente tra i clienti']);
+        break;
+      }
+
+      // Carica Admin SDK qui (siamo in rotta "pubblica")
+      $auth = require __DIR__ . '/firebase_admin.php';
+
+      // 1) Trova o crea utente Firebase
+      try {
+        $fu = $auth->getUserByEmail($email);
+        $uidNew = $fu->uid;
+      } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+        // Crea utente "vuoto" con password random (l'utente la imposterà via reset link)
+        $tempPass = generate_temp_password(12);
+        $created = $auth->createUser([
+          'email'        => $email,
+          'password'     => $tempPass,
+          'emailVerified'=> false,
+          'disabled'     => false,
+        ]);
+        $uidNew = $created->uid;
+      }
+
+      // 2) Upsert in UTENTI come CLIENTE
+      $pdo->prepare("
+        INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
+        VALUES (?,?, 'CLIENTE', 1)
+        ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), ATTIVO=1
+      ")->execute([$uidNew, $email]);
+
+      // 3) Collega tutti i CLIENTI con quell'email (solo dove UID è NULL)
+      $pdo->prepare("UPDATE CLIENTI SET UID=? WHERE EMAIL=? AND (UID IS NULL OR UID='')")
+          ->execute([$uidNew, $email]);
+
+      echo json_encode(['success'=>true, 'uid'=>$uidNew]);
+      break;
+    }
 
     /* =========================
     *  ADMIN: invia "benvenuto" (credenziali) a CLIENTE
