@@ -178,7 +178,7 @@ function email_welcome_password(string $to, string $displayName, string $tempPas
       ['label' => 'Email',               'value' => $to],
       ['label' => 'Password temporanea', 'value' => $tempPassword],
     ],
-    'ctaText'  => 'Accedi all&#39;app',
+    'ctaText'  => 'Accedi alla WebApp',
     'ctaUrl'   => $loginUrl,
     'footer'   => 'Se non hai richiesto questo accesso contatta l&#39;amministratore.',
   ]);
@@ -752,11 +752,10 @@ try {
     }
 
     case 'insert_cliente': {
-      $sql = 'INSERT INTO CLIENTI (UID, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
-              VALUES (?,?,?,?,?,?,?,?)';
+      $sql = 'INSERT INTO CLIENTI (COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
+              VALUES (?, ?, ?, ?, ?, ?, ?)';
       $stmt = $pdo->prepare($sql);
       $stmt->execute([
-        $uid,
         $_POST['lastName']   ?? '',
         $_POST['firstName']  ?? '',
         $_POST['birthDate']  ?? date('Y-m-d'),
@@ -1396,35 +1395,6 @@ try {
       if ($isAdmin) {
         if ($clientId) {
           $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
-          $stmt->execute([$clientId]);
-        } else {
-          $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_CLIENTE ASC,DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
-        }
-      } else {
-        if ($clientId) {
-          require_owns_client($pdo, $clientId, $uid);
-          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
-          $stmt->execute([$clientId]);
-        } else {
-          $stmt = $pdo->prepare("
-            SELECT st.*
-            FROM SCHEDE_ESERCIZI_TESTA st
-            JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-            WHERE c.UID=?
-            ORDER BY st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC");
-          $stmt->execute([$uid]);
-        }
-      }
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
-      break;
-    }
-
-    case 'get_schede_testa_attive': {
-      $clientId = isset($_GET['clientId']) ? (int)$_GET['clientId'] : (isset($_POST['clientId']) ? (int)$_POST['clientId'] : 0);
-
-      if ($isAdmin) {
-        if ($clientId) {
-          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? AND STATO='attivo' ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
           $stmt->execute([$clientId]);
         } else {
           $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_CLIENTE ASC,DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
