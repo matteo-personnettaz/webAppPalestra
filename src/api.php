@@ -61,22 +61,168 @@ if (!function_exists('generate_temp_password')) {
 }
 
 // === Email di benvenuto/reset con password temporanea
-function email_temp_password(string $to, string $displayName, string $tempPassword): array {
-  $appName = getenv('APP_NAME') ?: 'Palestra Athena';
+// function email_temp_password(string $to, string $displayName, string $tempPassword): array {
+//   $appName = getenv('APP_NAME') ?: 'Palestra Athena';
+//   $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
+//   $html = '
+//     <p>Gentile '.htmlspecialchars($displayName ?: $to).',</p>
+//     <p>Di seguito l\'accesso a <b>'.$appName.'</b>.</p>
+//     <div><p>Password temporanea: <b style="font-family:monospace;">'.htmlspecialchars($tempPassword).'</b></p></div>
+//     <p>Per motivi di sicurezza ti consigliamo di cambiarla al primo accesso.</p>'.
+//     ($loginUrl ? '<p>Accedi da qui: <a href="'.htmlspecialchars($loginUrl).'">'.$loginUrl.'</a></p>' : '').
+//     '<p>Se non hai richiesto questo accesso contatta l\'amministratore.</p>';
+//   return sendEmail([
+//     'to'      => $to,
+//     'subject' => 'Accesso WebApp Palestra Athena - Password Temporanea',
+//     'html'    => $html,
+//   ]);
+// }
+
+/* ================================
+ *  Template email (HTML inline)
+ * ================================ */
+function render_brand_email(array $args): string {
+  $appName   = $args['appName']   ?? 'Palestra Athena';
+  $title     = $args['title']     ?? '';
+  $greeting  = $args['greeting']  ?? '';
+  $introHtml = $args['introHtml'] ?? '';
+  $ctaText   = $args['ctaText']   ?? null;
+  $ctaUrl    = $args['ctaUrl']    ?? null;
+  $rows      = $args['rows']      ?? [];   // es. [['label'=>'Email','value'=>'...'], ['label'=>'Password','value'=>'...']]
+  $footer    = $args['footer']    ?? 'Questa è una comunicazione automatica. Non rispondere a questa email.';
+
+  // Nota: usiamo inline CSS per compatibilità con la maggior parte dei client
+  $html =
+'<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>'.htmlspecialchars($title ?: $appName).'</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f7fb;color:#111;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;">
+  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">
+    '.$appName.' – Notifica automatica
+  </span>
+
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="100%" style="padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:640px;background:#ffffff;border-radius:12px;border:1px solid #e6e9f0;box-shadow:0 1px 2px rgba(16,24,40,.06);">
+          <tr>
+            <td style="padding:20px 24px;border-bottom:1px solid #eef1f6;">
+              <div style="font-size:18px;font-weight:700;">'.htmlspecialchars($appName).'</div>
+              '.($title ? '<div style="margin-top:6px;font-size:15px;color:#475467;font-weight:600;">'.htmlspecialchars($title).'</div>' : '').'
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px;">
+              '.($greeting ? '<p style="margin:0 0 12px 0;">'.nl2br(htmlspecialchars($greeting)).'</p>' : '').'
+              '.($introHtml ?: '').'
+
+              '.(count($rows) ? '
+              <div style="margin:18px 0;padding:14px 16px;background:#f7fafc;border:1px solid #e6e9f0;border-radius:10px;">
+                '.implode('', array_map(function($r){
+                  $label = htmlspecialchars($r["label"] ?? "");
+                  $value = htmlspecialchars($r["value"] ?? "");
+                  return \'<div style="display:flex;justify-content:space-between;gap:16px;padding:6px 0;">
+                            <div style="color:#475467;font-size:13px;">\'.$label.\'</div>
+                            <div style="font-weight:700;font-size:13px;">\'.$value.\'</div>
+                          </div>\';
+                }, $rows)).'
+              </div>' : '').'
+
+              '.($ctaText && $ctaUrl ? '
+                <div style="margin:22px 0 10px 0;">
+                  <a href="'.htmlspecialchars($ctaUrl).'"
+                     style="display:inline-block;padding:12px 18px;background:#d32f2f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">
+                     '.htmlspecialchars($ctaText).'
+                  </a>
+                </div>
+                <div style="font-size:12px;color:#667085;">Se il pulsante non funziona, copia e incolla questo link nel browser:<br>
+                  <span style="word-break:break-all;color:#344054;">'.htmlspecialchars($ctaUrl).'</span>
+                </div>
+              ' : '').'
+
+              <hr style="border:none;border-top:1px solid #eef1f6;margin:20px 0;">
+              <p style="margin:0;font-size:12px;color:#667085;">'.$footer.'</p>
+            </td>
+          </tr>
+
+        </table>
+
+        <div style="margin:12px 0 0 0;color:#98a2b3;font-size:12px;">
+          © '.date('Y').' '.htmlspecialchars($appName).'
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>';
+
+  return $html;
+}
+
+/* =========================================
+ *  Email di benvenuto con password temporanea
+ * ========================================= */
+function email_welcome_password(string $to, string $displayName, string $tempPassword): array {
+  $appName  = getenv('APP_NAME')      ?: 'Palestra Athena';
   $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
-  $html = '
-    <p>Gentile '.htmlspecialchars($displayName ?: $to).',</p>
-    <p>Di seguito l\'accesso a <b>'.$appName.'</b>.</p>
-    <div><p>Password temporanea: <b style="font-family:monospace;">'.htmlspecialchars($tempPassword).'</b></p></div>
-    <p>Per motivi di sicurezza ti consigliamo di cambiarla al primo accesso.</p>'.
-    ($loginUrl ? '<p>Accedi da qui: <a href="'.htmlspecialchars($loginUrl).'">'.$loginUrl.'</a></p>' : '').
-    '<p>Se non hai richiesto questo accesso contatta l\'amministratore.</p>';
+
+  $html = render_brand_email([
+    'appName'  => $appName,
+    'title'    => 'Benvenuto nella piattaforma',
+    'greeting' => 'Gentile '.($displayName !== '' ? $displayName : $to).',',
+    'introHtml'=> '<p style="margin:0 0 10px 0;">il tuo accesso a <b>'.$appName.'</b> è pronto. Di seguito trovi le credenziali iniziali. '
+                 .'Per motivi di sicurezza ti invitiamo a <b>cambiare la password</b> dopo il primo accesso.</p>',
+    'rows'     => [
+      ['label' => 'Email',               'value' => $to],
+      ['label' => 'Password temporanea', 'value' => $tempPassword],
+    ],
+    'ctaText'  => 'Accedi all’app',
+    'ctaUrl'   => $loginUrl,
+    'footer'   => 'Se non hai richiesto questo accesso contatta l’amministratore. La password temporanea è personale e scade al cambio credenziali.',
+  ]);
+
   return sendEmail([
     'to'      => $to,
-    'subject' => 'Accesso WebApp Palestra Athena - Password Temporanea',
+    'subject' => 'Benvenuto - Accesso e password temporanea',
     'html'    => $html,
   ]);
 }
+
+/* =========================================
+ *  (Opzionale) Allinea anche il reset password
+ *  alla nuova grafica, riusando il template
+ * ========================================= */
+function email_temp_password(string $to, string $displayName, string $tempPassword): array {
+  $appName  = getenv('APP_NAME')      ?: 'Palestra Athena';
+  $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
+
+  $html = render_brand_email([
+    'appName'  => $appName,
+    'title'    => 'Reset password eseguito',
+    'greeting' => 'Gentile '.($displayName !== '' ? $displayName : $to).',',
+    'introHtml'=> '<p style="margin:0 0 10px 0;">come richiesto, abbiamo generato una <b>password temporanea</b>. '
+                 .'Usala per accedere e poi imposta una nuova password dalla sezione profilo.</p>',
+    'rows'     => [
+      ['label' => 'Email',               'value' => $to],
+      ['label' => 'Password temporanea', 'value' => $tempPassword],
+    ],
+    'ctaText'  => 'Vai al login',
+    'ctaUrl'   => $loginUrl,
+    'footer'   => 'Se non hai richiesto il reset, contatta subito l’amministratore.',
+  ]);
+
+  return sendEmail([
+    'to'      => $to,
+    'subject' => 'Reset password – credenziali temporanee',
+    'html'    => $html,
+  ]);
+}
+
 
 /* ===== API KEY / ACTION / ENV ===== */
 $API_KEY = getenv('API_KEY') ?: 'override_me_in_prod';
@@ -360,7 +506,7 @@ try {
         $pdo->commit();
 
         // 3) Email di benvenuto con password temporanea
-        $mailRes = email_temp_password($email, trim("$firstName $lastName"), $tempPass);
+        $mailRes = email_welcome_password($email, trim("$firstName $lastName"), $tempPass);
 
         echo json_encode([
           'success'     => ($mailRes['ok'] ?? false) === true,
