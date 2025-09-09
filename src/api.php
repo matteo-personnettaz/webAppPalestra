@@ -618,7 +618,7 @@ try {
       }
 
       // Email "benvenuto" con credenziali
-      $mailRes = email_temp_password($email, $fullName, $tempPass);
+      $mailRes = email_welcome_password($email, $fullName, $tempPass);
       echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'details'=>$mailRes]);
       break;
     }
