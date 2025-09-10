@@ -533,8 +533,20 @@ try {
         break;
       }
 
-      // Deve esistere almeno un cliente con questa email
-      $q = $pdo->prepare("SELECT ID_CLIENTE, UID FROM CLIENTI WHERE EMAIL=? LIMIT 1");
+      // Deve esistere almeno un cliente con questa email.
+      // Cerco anche nome/cognome (supporto sia NOME/COGNOME sia FIRST_NAME/LAST_NAME).
+      $q = $pdo->prepare("
+        SELECT
+          ID_CLIENTE,
+          UID,
+          NOME,
+          COGNOME,
+          FIRST_NAME,
+          LAST_NAME
+        FROM CLIENTI
+        WHERE EMAIL = ?
+        LIMIT 1
+      ");
       $q->execute([$email]);
       $row = $q->fetch();
       if (!$row) {
@@ -543,6 +555,11 @@ try {
         break;
       }
 
+      // Ricava un display name sensato
+      $first = trim($row['NOME'] ?? ($row['FIRST_NAME'] ?? ''));
+      $last  = trim($row['COGNOME'] ?? ($row['LAST_NAME'] ?? ''));
+      $fullName = trim("$first $last");
+
       // Carica Admin SDK qui (siamo in rotta "pubblica")
       $auth = require __DIR__ . '/firebase_admin.php';
 
@@ -550,16 +567,25 @@ try {
       try {
         $fu = $auth->getUserByEmail($email);
         $uidNew = $fu->uid;
+
+        // Se ho un nome e quello in Auth è diverso/vuoto, aggiornalo
+        if ($fullName !== '' && $fu->displayName !== $fullName) {
+          $auth->updateUser($uidNew, ['displayName' => $fullName]);
+        }
       } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
-        // Crea utente "vuoto" con password random (l'utente la imposterà via reset link)
+        // Crea utente con password temporanea (l'utente poi la reimposta)
         $tempPass = generate_temp_password(12);
-        $created = $auth->createUser([
-          'email'        => $email,
-          'password'     => $tempPass,
-          'emailVerified'=> false,
-          'disabled'     => false,
-        ]);
-        $uidNew = $created->uid;
+        $data = [
+          'email'         => $email,
+          'password'      => $tempPass,
+          'emailVerified' => false,
+          'disabled'      => false,
+        ];
+        if ($fullName !== '') {
+          $data['displayName'] = $fullName;
+        }
+        $created = $auth->createUser($data);
+        $uidNew  = $created->uid;
       }
 
       // 2) Upsert in UTENTI come CLIENTE
@@ -569,11 +595,19 @@ try {
         ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), ATTIVO=1
       ")->execute([$uidNew, $email]);
 
-      // 3) Collega tutti i CLIENTI con quell'email (solo dove UID è NULL)
-      $pdo->prepare("UPDATE CLIENTI SET UID=? WHERE EMAIL=? AND (UID IS NULL OR UID='')")
-          ->execute([$uidNew, $email]);
+      // 3) Collega tutti i CLIENTI con quell'email (solo dove UID è NULL/vuoto)
+      $pdo->prepare("
+        UPDATE CLIENTI
+        SET UID = ?
+        WHERE EMAIL = ?
+          AND (UID IS NULL OR UID = '')
+      ")->execute([$uidNew, $email]);
 
-      echo json_encode(['success'=>true, 'uid'=>$uidNew]);
+      echo json_encode([
+        'success' => true,
+        'uid'     => $uidNew,
+        'displayName' => $fullName, // utile al client (facoltativo)
+      ]);
       break;
     }
 
