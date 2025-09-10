@@ -315,7 +315,7 @@ if ($action === 'diag') {
 }
 
 /* ===== Auth per rotte protette ===== */ 
-$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag', 'email_test'], true);
+$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag', 'email_test','provision_if_allowed'], true);
 
 $uid = null; $isAdmin = false; $auth = null;
 
