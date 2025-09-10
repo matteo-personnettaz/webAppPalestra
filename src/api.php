@@ -339,15 +339,58 @@ if (!$isPublic) {
 }
 
 /* ===== Funzioni di ownership ===== */
-function require_owns_client(PDO $pdo, int $clientId, string $uid): void {
-  $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
-  $chk->execute([$clientId, $uid]);
-  if (!$chk->fetch()) {
+// function require_can_access_client(PDO $pdo, int $clientId, string $uid): void {
+//   $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
+//   $chk->execute([$clientId, $uid]);
+//   if (!$chk->fetch()) {
+//     http_response_code(404);
+//     echo json_encode(['success' => false, 'error' => 'require_can_access_client - ID_CLIENTE not found or not owned']);
+//     exit;
+//   }
+// }
+
+function is_admin(PDO $pdo, string $uid): bool {
+  $q = $pdo->prepare("SELECT 1 FROM UTENTI WHERE UID=? AND RUOLO='ADMIN' AND ATTIVO=1 LIMIT 1");
+  $q->execute([$uid]);
+  return (bool)$q->fetchColumn();
+}
+
+function require_client_exists(PDO $pdo, int $cid): void {
+  $q = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? LIMIT 1");
+  $q->execute([$cid]);
+  if (!$q->fetchColumn()) {
     http_response_code(404);
-    echo json_encode(['success' => false, 'error' => 'require_owns_client - ID_CLIENTE not found or not owned']);
+    echo json_encode(['success'=>false,'error'=>'CLIENTE non trovato']);
     exit;
   }
 }
+
+/**
+ * Consente:
+ *  - admin su QUALSIASI cliente (anche con UID NULL)
+ *  - utente proprietario (CLIENTI.UID = $uid)
+ */
+function require_can_access_client(PDO $pdo, int $cid, string $uid): void {
+  if ($cid <= 0) {
+    http_response_code(404);
+    echo json_encode(['success'=>false,'error'=>'ID_CLIENTE non valido']);
+    exit;
+  }
+
+  if (is_admin($pdo, $uid)) {
+    require_client_exists($pdo, $cid);
+    return;
+  }
+
+  $q = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=? LIMIT 1");
+  $q->execute([$cid, $uid]);
+  if (!$q->fetchColumn()) {
+    http_response_code(404);
+    echo json_encode(['success'=>false,'error'=>'require_can_access_client - ID_CLIENTE not found or not owned']);
+    exit;
+  }
+}
+
 
 /* ===== ROUTING ===== */
 try {
@@ -804,13 +847,18 @@ try {
 
     case 'update_cliente': {
       $clientId = (int)($_POST['id'] ?? 0);
-      require_owns_client($pdo, $clientId, $uid);
+      if (!$isAdmin) { require_can_access_client($pdo, $clientId, $uid); }
+      else           { require_client_exists($pdo, $clientId); }
 
-      $sql = 'UPDATE CLIENTI
-              SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
-              WHERE ID_CLIENTE=? AND UID=?';
-      $stmt = $pdo->prepare($sql);
-      $stmt->execute([
+      $sql = $isAdmin
+        ? 'UPDATE CLIENTI
+          SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
+          WHERE ID_CLIENTE=?'
+        : 'UPDATE CLIENTI
+          SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
+          WHERE ID_CLIENTE=? AND UID=?';
+
+      $params = [
         $_POST['lastName']   ?? '',
         $_POST['firstName']  ?? '',
         $_POST['birthDate']  ?? date('Y-m-d'),
@@ -819,27 +867,37 @@ try {
         $_POST['phone']      ?? null,
         $_POST['email']      ?? null,
         $clientId,
-        $uid,
-      ]);
+      ];
+      if (!$isAdmin) $params[] = $uid;
+
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute($params);
       echo json_encode(['success' => true]);
       break;
     }
 
     case 'delete_cliente': {
       $clientId = (int)($_POST['id'] ?? 0);
-      require_owns_client($pdo, $clientId, $uid);
-      $stmt = $pdo->prepare('DELETE FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
-      $stmt->execute([$clientId, $uid]);
+      if (!$isAdmin) { require_can_access_client($pdo, $clientId, $uid); }
+      else           { require_client_exists($pdo, $clientId); }
+
+      $sql = $isAdmin
+        ? 'DELETE FROM CLIENTI WHERE ID_CLIENTE=?'
+        : 'DELETE FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?';
+
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute($isAdmin ? [$clientId] : [$clientId, $uid]);
       echo json_encode(['success' => true]);
       break;
     }
+
 
     /* =========================
      *       MISURAZIONI
      * ========================= */
     case 'get_misurazioni': {
       $cid = (int)($_GET['clientId'] ?? $_POST['clientId'] ?? 0);
-      require_owns_client($pdo, $cid, $uid);
+      require_can_access_client($pdo, $cid, $uid);
 
       $stmt = $pdo->prepare('SELECT * FROM MISURAZIONI WHERE ID_CLIENTE=? ORDER BY DATA_MISURAZIONE DESC');
       $stmt->execute([$cid]);
@@ -849,7 +907,7 @@ try {
 
     case 'insert_misurazione': {
       $cid = (int)($_POST['clientId'] ?? 0);
-      require_owns_client($pdo, $cid, $uid);
+      require_can_access_client($pdo, $cid, $uid);
 
       $sql = 'INSERT INTO MISURAZIONI
               (ID_CLIENTE, DATA_MISURAZIONE, PESO, ALTEZZA, TORACE, VITA, FIANCHI, BRACCIO_SX, BRACCIO_DX, COSCIA_SX, COSCIA_DX)
@@ -874,7 +932,7 @@ try {
 
     case 'update_misurazione': {
       $cid = (int)($_POST['clientId'] ?? 0);
-      require_owns_client($pdo, $cid, $uid);
+      require_can_access_client($pdo, $cid, $uid);
 
       $sql = 'UPDATE MISURAZIONI
               SET ID_CLIENTE=?, DATA_MISURAZIONE=?, PESO=?, ALTEZZA=?, TORACE=?, VITA=?, FIANCHI=?, BRACCIO_SX=?, BRACCIO_DX=?, COSCIA_SX=?, COSCIA_DX=?
@@ -899,19 +957,17 @@ try {
     }
 
     case 'delete_misurazione': {
-      // ownership: join tramite CLIENTI
       $id = (int)($_POST['id'] ?? 0);
-      $chk = $pdo->prepare("
-        SELECT 1
+      $q = $pdo->prepare("
+        SELECT c.UID
         FROM MISURAZIONI m
         JOIN CLIENTI c ON c.ID_CLIENTE = m.ID_CLIENTE
-        WHERE m.ID_MISURAZIONE=? AND c.UID=?");
-      $chk->execute([$id, $uid]);
-      if (!$chk->fetch()) {
-        http_response_code(404);
-        echo json_encode(['success'=>false,'error'=>'Measurement not found']);
-        break;
-      }
+        WHERE m.ID_MISURAZIONE=?");
+      $q->execute([$id]);
+      $row = $q->fetch();
+      if (!$row) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Measurement not found']); break; }
+      if (!$isAdmin && $row['UID'] !== $uid) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Forbidden']); break; }
+
       $stmt = $pdo->prepare('DELETE FROM MISURAZIONI WHERE ID_MISURAZIONE=?');
       $stmt->execute([$id]);
       echo json_encode(['success'=>true]);
@@ -1001,7 +1057,7 @@ try {
     // (Nota: in flusso attuale gli utenti NON creano manualmente appuntamenti senza slot)
     case 'insert_appuntamento': {
       $cid = (int)($_POST['clientId'] ?? 0);
-      require_owns_client($pdo, $cid, $uid);
+      if (!$isAdmin) { require_can_access_client($pdo, $cid, $uid); }
 
       $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE)
                              VALUES (?,?,?,?)");
@@ -1017,24 +1073,26 @@ try {
 
     case 'update_appuntamento': {
       $cid = (int)($_POST['clientId'] ?? 0);
-      require_owns_client($pdo, $cid, $uid);
+      if (!$isAdmin) { require_can_access_client($pdo, $cid, $uid); }
 
-      // ownership del record da aggiornare (tramite join)
       $idApp = (int)($_POST['id'] ?? 0);
-      $chk = $pdo->prepare("SELECT 1
-                            FROM APPUNTAMENTI a
-                            JOIN CLIENTI c ON c.ID_CLIENTE=a.ID_CLIENTE
-                            WHERE a.ID_APPUNTAMENTO=? AND c.UID=?");
-      $chk->execute([$idApp, $uid]);
-      if (!$chk->fetch()) {
-        http_response_code(404);
-        echo json_encode(['success'=>false,'error'=>'Appointment not found']);
-        break;
+      if (!$isAdmin) {
+        $chk = $pdo->prepare("SELECT 1
+                              FROM APPUNTAMENTI a
+                              JOIN CLIENTI c ON c.ID_CLIENTE=a.ID_CLIENTE
+                              WHERE a.ID_APPUNTAMENTO=? AND c.UID=?");
+        $chk->execute([$idApp, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appointment not found']); break; }
+      } else {
+        // opzionale: verifica che esista comunque
+        $chk = $pdo->prepare("SELECT 1 FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=?");
+        $chk->execute([$idApp]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appointment not found']); break; }
       }
 
       $stmt = $pdo->prepare("UPDATE APPUNTAMENTI
-                             SET ID_CLIENTE=?, DATA_ORA=?, TIPOLOGIA=?, NOTE=?
-                             WHERE ID_APPUNTAMENTO=?");
+                            SET ID_CLIENTE=?, DATA_ORA=?, TIPOLOGIA=?, NOTE=?
+                            WHERE ID_APPUNTAMENTO=?");
       $stmt->execute([
         $cid,
         $_POST['datetime'] ?? date('Y-m-d H:i:s'),
@@ -1435,7 +1493,7 @@ try {
         }
       } else {
         if ($clientId) {
-          require_owns_client($pdo, $clientId, $uid);
+          require_can_access_client($pdo, $clientId, $uid);
           $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
           $stmt->execute([$clientId]);
         } else {
@@ -1454,7 +1512,7 @@ try {
 
     case 'insert_scheda_testa': {
       $clientId = (int)($_POST['clientId'] ?? 0);
-      if (!$isAdmin) { require_owns_client($pdo, $clientId, $uid); }
+      if (!$isAdmin) { require_can_access_client($pdo, $clientId, $uid); }
 
       $tipoScheda = $_POST['tipoScheda'] ?? null; // 'A','B','C'
       $validita   = (int)($_POST['validita'] ?? 2); // mesi
