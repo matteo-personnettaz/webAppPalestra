@@ -1769,6 +1769,125 @@ try {
       break;
     }
 
+
+    /* =========================
+     *      COMUNICAZIONI
+     * ========================= */
+    case 'get_comunicazioni_attive': {
+      $limit = (int)($_GET['limit'] ?? $_POST['limit'] ?? 5);
+      if ($limit <= 0 || $limit > 50) $limit = 5;
+
+      // Solo avvisi abilitati e “on air” nel momento della chiamata
+      $sql = "SELECT ID_COMUNICAZIONE, TIPOLOGIA, INIZIO, FINE, TESTO, ABIL, D_AGG
+              FROM COMUNICAZIONI
+              WHERE ABIL=1
+                AND INIZIO <= NOW()
+                AND FINE   >  NOW()
+              ORDER BY INIZIO DESC
+              LIMIT ?";
+      $stmt = $pdo->prepare($sql);
+      $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+      $stmt->execute();
+
+      echo json_encode(['success'=>true, 'data'=>$stmt->fetchAll()]);
+      break;
+    }
+
+    // Admin: insert
+    case 'insert_comunicazione': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      $tipologia = trim($_POST['tipologia'] ?? 'GENE');
+      $inizio    = trim($_POST['inizio']    ?? '');
+      $fine      = trim($_POST['fine']      ?? '');
+      $testo     = trim($_POST['testo']     ?? '');
+      $abil      = (int)($_POST['abil']     ?? 1);
+
+      // Validazioni minime
+      if ($inizio === '' || $fine === '' || $testo === '') {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametri obbligatori: inizio, fine, testo']);
+        break;
+      }
+      // Verifica formato e coerenza (yyyy-mm-dd HH:ii:ss)
+      $d1 = DateTime::createFromFormat('Y-m-d H:i:s', $inizio);
+      $d2 = DateTime::createFromFormat('Y-m-d H:i:s', $fine);
+      if (!$d1 || !$d2 || $d2 <= $d1) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Intervallo data/ora non valido']);
+        break;
+      }
+
+      $sql = "INSERT INTO COMUNICAZIONI (TIPOLOGIA, INIZIO, FINE, TESTO, ABIL)
+              VALUES (?,?,?,?,?)";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute([$tipologia, $inizio, $fine, $testo, $abil ? 1 : 0]);
+
+      echo json_encode(['success'=>true, 'id'=>$pdo->lastInsertId()]);
+      break;
+    }
+
+    // Admin: update
+    case 'update_comunicazione': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      $id        = (int)($_POST['id'] ?? 0);
+      $tipologia = trim($_POST['tipologia'] ?? 'GENE');
+      $inizio    = trim($_POST['inizio']    ?? '');
+      $fine      = trim($_POST['fine']      ?? '');
+      $testo     = trim($_POST['testo']     ?? '');
+      $abil      = (int)($_POST['abil']     ?? 1);
+
+      if ($id <= 0 || $inizio === '' || $fine === '' || $testo === '') {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametri non validi']);
+        break;
+      }
+      $d1 = DateTime::createFromFormat('Y-m-d H:i:s', $inizio);
+      $d2 = DateTime::createFromFormat('Y-m-d H:i:s', $fine);
+      if (!$d1 || !$d2 || $d2 <= $d1) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Intervallo data/ora non valido']);
+        break;
+      }
+
+      $sql = "UPDATE COMUNICAZIONI
+              SET TIPOLOGIA=?, INIZIO=?, FINE=?, TESTO=?, ABIL=?
+              WHERE ID_COMUNICAZIONE=?";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute([$tipologia, $inizio, $fine, $testo, $abil ? 1 : 0, $id]);
+
+      if ($stmt->rowCount() === 0) {
+        http_response_code(404);
+        echo json_encode(['success'=>false,'error'=>'Comunicazione non trovata']);
+        break;
+      }
+      echo json_encode(['success'=>true]);
+      break;
+    }
+
+    // Admin: delete
+    case 'delete_comunicazione': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+
+      $id = (int)($_POST['id'] ?? 0);
+      if ($id <= 0) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'id mancante']);
+        break;
+      }
+
+      $stmt = $pdo->prepare("DELETE FROM COMUNICAZIONI WHERE ID_COMUNICAZIONE=?");
+      $stmt->execute([$id]);
+      if ($stmt->rowCount() === 0) {
+        http_response_code(404);
+        echo json_encode(['success'=>false,'error'=>'Comunicazione non trovata']);
+        break;
+      }
+      echo json_encode(['success'=>true]);
+      break;
+    }
+
     /* =========================
      *         DEFAULT
      * ========================= */
