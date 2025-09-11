@@ -1778,7 +1778,7 @@ try {
       if ($limit <= 0 || $limit > 50) $limit = 5;
 
       // Solo avvisi abilitati e “on air” nel momento della chiamata
-      $sql = "SELECT ID_COMUNICAZIONE, TIPOLOGIA, INIZIO, FINE, TESTO, ABIL, D_AGG
+      $sql = "SELECT ID_COMUNICAZIONE, TIPOLOGIA, INIZIO, FINE, TITOLO, TESTO, ABIL, D_AGG
               FROM COMUNICAZIONI
               WHERE ABIL=1
                 AND FINE   >  NOW()
@@ -1799,6 +1799,7 @@ try {
       $tipologia = trim($_POST['tipologia'] ?? 'GENE');
       $inizio    = trim($_POST['inizio']    ?? '');
       $fine      = trim($_POST['fine']      ?? '');
+      $titolo    = trim($_POST['titolo']    ?? '');
       $testo     = trim($_POST['testo']     ?? '');
       $abil      = (int)($_POST['abil']     ?? 1);
 
@@ -1834,10 +1835,11 @@ try {
       $tipologia = trim($_POST['tipologia'] ?? 'GENE');
       $inizio    = trim($_POST['inizio']    ?? '');
       $fine      = trim($_POST['fine']      ?? '');
+      $titolo    = trim($_POST['titolo']    ?? '');
       $testo     = trim($_POST['testo']     ?? '');
       $abil      = (int)($_POST['abil']     ?? 1);
 
-      if ($id <= 0 || $inizio === '' || $fine === '' || $testo === '') {
+      if ($id <= 0 || $inizio === '' || $fine === '' || $titolo === '' || $testo === '') {
         http_response_code(400);
         echo json_encode(['success'=>false,'error'=>'Parametri non validi']);
         break;
@@ -1851,10 +1853,10 @@ try {
       }
 
       $sql = "UPDATE COMUNICAZIONI
-              SET TIPOLOGIA=?, INIZIO=?, FINE=?, TESTO=?, ABIL=?
+              SET TIPOLOGIA=?, INIZIO=?, FINE=?, TITOLO=?, TESTO=?, ABIL=?
               WHERE ID_COMUNICAZIONE=?";
       $stmt = $pdo->prepare($sql);
-      $stmt->execute([$tipologia, $inizio, $fine, $testo, $abil ? 1 : 0, $id]);
+      $stmt->execute([$tipologia, $inizio, $fine, $titolo, $testo, $abil ? 1 : 0, $id]);
 
       if ($stmt->rowCount() === 0) {
         http_response_code(404);
