@@ -1781,7 +1781,6 @@ try {
       $sql = "SELECT ID_COMUNICAZIONE, TIPOLOGIA, INIZIO, FINE, TESTO, ABIL, D_AGG
               FROM COMUNICAZIONI
               WHERE ABIL=1
-                AND INIZIO <= NOW()
                 AND FINE   >  NOW()
               ORDER BY INIZIO DESC
               LIMIT ?";
