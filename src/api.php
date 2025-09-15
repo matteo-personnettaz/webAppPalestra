@@ -431,6 +431,17 @@ function require_admin_can_access_client(PDO $pdo, string $adminUid, int $client
   }
 }
 
+//Per creare il nome visualizzato NOME + COGNOME + (ADM se admin)
+function build_display_name(string $first, string $last, bool $isAdmin = false): string {
+  $name = trim("$first $last");
+  if ($isAdmin) {
+    // se non hai nome/cognome, metti solo ADM
+    return $name === '' ? 'ADM' : "$name ADM";
+  }
+  return $name;
+}
+
+
 
 /* ===== ROUTING ===== */
 try {
@@ -477,6 +488,89 @@ try {
     /* =========================
     *  ADMIN: CREAZIONE CLIENTE + UTENTE
     * ========================= */
+    case 'admin_create_admin': {
+      // Solo admin autenticati
+      if (!$isAdmin) {
+        http_response_code(403);
+        echo json_encode(['success'=>false,'error'=>'Solo admin']);
+        break;
+      }
+
+      $email   = trim($_POST['email']   ?? '');
+      $name    = trim($_POST['name']    ?? '');
+      $surname = trim($_POST['surname'] ?? '');
+      $display = build_display_name($firstName, $lastName, true);
+
+      if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $display === '') {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametri non validi (email/nome/cognome)']);
+        break;
+      }
+
+      // Se esiste già un ADMIN con questa email → blocca
+      $chk = $pdo->prepare("SELECT RUOLO, UID FROM UTENTI WHERE EMAIL=? LIMIT 1");
+      $chk->execute([$email]);
+      $rowUser = $chk->fetch();
+      if ($rowUser && strtoupper((string)$rowUser['RUOLO']) === 'ADMIN') {
+        http_response_code(409);
+        echo json_encode(['success'=>false,'error'=>'Email già associata a un utente ADMIN']);
+        break;
+      }
+
+      // Crea/aggiorna utente Firebase con password temporanea
+      $tempPass = generate_temp_password(12);
+      try {
+        try {
+          $fu = $auth->getUserByEmail($email);
+          $uidNew = $fu->uid;
+          $auth->updateUser($uidNew, [
+            'password'     => $tempPass,
+            'displayName'  => $display,
+            'disabled'     => false,
+          ]);
+        } catch (UserNotFound $e) {
+          $created = $auth->createUser([
+            'email'         => $email,
+            'password'      => $tempPass,
+            'displayName'   => $display,
+            'emailVerified' => false,
+            'disabled'      => false,
+          ]);
+          $uidNew = $created->uid;
+        }
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Errore Firebase: '.$e->getMessage()]);
+        break;
+      }
+
+      // Upsert in UTENTI come ADMIN
+      try {
+        $pdo->prepare("
+          INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
+          VALUES (?,?, 'ADMIN', 1)
+          ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), RUOLO='ADMIN', ATTIVO=1
+        ")->execute([$uidNew, $email]);
+
+        // opzionale: se la stessa email fosse presente in CLIENTI, non obbligatorio rimuoverla
+        // ma se vuoi evitare conflitti puoi eventualmente disaccoppiare:
+        // $pdo->prepare('UPDATE CLIENTI SET UID=NULL WHERE EMAIL=?')->execute([$email]);
+
+        // invia credenziali
+        $mailRes = email_welcome_password($email, $display, $tempPass);
+
+        echo json_encode([
+          'success'    => ($mailRes['ok'] ?? false) === true,
+          'uid'        => $uidNew,
+          'email_sent' => $mailRes,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>'Errore DB: '.$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'admin_create_client': {
       if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
 
@@ -485,6 +579,7 @@ try {
       $firstName  = trim($_POST['firstName']  ?? '');
       $phone      = ($_POST['phone']      ?? '') ?: null;
       $email      = trim($_POST['email']  ?? '');
+      $display = build_display_name($firstName, $lastName, true);
 
       if ($lastName === '' || $firstName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         http_response_code(400);
@@ -511,14 +606,14 @@ try {
             $uidNew = $fu->uid;
             $auth->updateUser($uidNew, [
               'password'     => $tempPass,
-              'displayName'  => trim("$firstName $lastName"),
+              'displayName'  => $display,
               'disabled'     => false,
             ]);
           } catch (UserNotFound $e) {
             $created = $auth->createUser([
               'email'        => $email,
               'password'     => $tempPass,
-              'displayName'  => trim("$firstName $lastName"),
+              'displayName'  => $display,
               'emailVerified'=> false,
               'disabled'     => false,
             ]);
@@ -530,14 +625,14 @@ try {
             $uidNew = $fu->uid;
             $auth->updateUser($uidNew, [
               'password'     => $tempPass,
-              'displayName'  => trim("$firstName $lastName"),
+              'displayName'  => $display,
               'disabled'     => false,
             ]);
           } catch (UserNotFound $e) {
             $created = $auth->createUser([
               'email'        => $email,
               'password'     => $tempPass,
-              'displayName'  => trim("$firstName $lastName"),
+              'displayName'  => $display,
               'emailVerified'=> false,
               'disabled'     => false,
             ]);
