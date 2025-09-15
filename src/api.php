@@ -499,7 +499,7 @@ try {
       $email   = trim($_POST['email']   ?? '');
       $name    = trim($_POST['name']    ?? '');
       $surname = trim($_POST['surname'] ?? '');
-      $display = build_display_name($firstName, $lastName, true);
+      $display = build_display_name($name, $surname, true);
 
       if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $display === '') {
         http_response_code(400);
