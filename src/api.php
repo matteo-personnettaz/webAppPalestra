@@ -563,7 +563,7 @@ try {
         $stmt = $pdo->prepare('
           INSERT INTO CLIENTI
             (UID, COGNOME, NOME, TELEFONO, EMAIL)
-          VALUES (?,?,?,?,?,?,?,?)
+          VALUES (?,?,?,?,?)
         ');
         $stmt->execute([
           $uidNew, $lastName, $firstName, $phone, $email
