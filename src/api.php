@@ -14,7 +14,7 @@ header('Content-Type: application/json; charset=utf-8');
 /* ===== Composer (SOLO QUI) ===== */
 require __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/send_email.php';
-
+use Kreait\Firebase\Exception\Auth\UserNotFound;
 
 /* ===== Helpers ===== */
 function read_authorization_header(): string {
@@ -60,27 +60,9 @@ if (!function_exists('generate_temp_password')) {
   }
 }
 
-// === Email di benvenuto/reset con password temporanea
-// function email_temp_password(string $to, string $displayName, string $tempPassword): array {
-//   $appName = getenv('APP_NAME') ?: 'Palestra Athena';
-//   $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
-//   $html = '
-//     <p>Gentile '.htmlspecialchars($displayName ?: $to).',</p>
-//     <p>Di seguito l\'accesso a <b>'.$appName.'</b>.</p>
-//     <div><p>Password temporanea: <b style="font-family:monospace;">'.htmlspecialchars($tempPassword).'</b></p></div>
-//     <p>Per motivi di sicurezza ti consigliamo di cambiarla al primo accesso.</p>'.
-//     ($loginUrl ? '<p>Accedi da qui: <a href="'.htmlspecialchars($loginUrl).'">'.$loginUrl.'</a></p>' : '').
-//     '<p>Se non hai richiesto questo accesso contatta l\'amministratore.</p>';
-//   return sendEmail([
-//     'to'      => $to,
-//     'subject' => 'Accesso WebApp Palestra Athena - Password Temporanea',
-//     'html'    => $html,
-//   ]);
-// }
-
 /* ================================
- *  Template email (HTML inline)
- * ================================ */
+*  Template email (HTML inline)
+* ================================ */
 function render_brand_email(array $args): string {
   $appName   = $args['appName']   ?? 'Palestra Athena';
   $title     = $args['title']     ?? '';
@@ -88,7 +70,7 @@ function render_brand_email(array $args): string {
   $introHtml = $args['introHtml'] ?? '';
   $ctaText   = $args['ctaText']   ?? null;
   $ctaUrl    = $args['ctaUrl']    ?? null;
-  $rows      = $args['rows']      ?? [];   // es. [['label'=>'Email','value'=>'...'], ['label'=>'Password','value'=>'...']]
+  $rows      = $args['rows']      ?? [];
   $footer    = $args['footer']    ?? 'Questa è una comunicazione automatica. Non rispondere a questa email.';
 
   // Nota: usiamo inline CSS per compatibilità con la maggior parte dei client
@@ -163,8 +145,8 @@ function render_brand_email(array $args): string {
 }
 
 /* =========================================
- *  Email di benvenuto con password temporanea
- * ========================================= */
+*  Email di benvenuto con password temporanea
+* ========================================= */
 function email_welcome_password(string $to, string $displayName, string $tempPassword): array {
   $appName  = getenv('APP_NAME')      ?: 'Palestra Athena';
   $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
@@ -191,9 +173,8 @@ function email_welcome_password(string $to, string $displayName, string $tempPas
 }
 
 /* =========================================
- *  (Opzionale) Allinea anche il reset password
- *  alla nuova grafica, riusando il template
- * ========================================= */
+*  Reset password con nuova grafica
+* ========================================= */
 function email_temp_password(string $to, string $displayName, string $tempPassword): array {
   $appName  = getenv('APP_NAME')      ?: 'Palestra Athena';
   $loginUrl = getenv('APP_LOGIN_URL') ?: 'https://palestra-athena.web.app';
@@ -257,6 +238,59 @@ if ($action === 'socketcheck') {
   exit;
 }
 
+/* ===== (3.2) Esempi DDL e elenco tabelle (pubblici) ===== */
+if ($action === 'schema_examples') {
+  echo json_encode([
+    'success' => true,
+    'ddl' => [
+      'UTENTI' => "CREATE TABLE IF NOT EXISTS UTENTI (
+  UID          VARCHAR(64) PRIMARY KEY,
+  EMAIL        VARCHAR(255) NOT NULL UNIQUE,
+  RUOLO        ENUM('ADMIN','CLIENTE') NOT NULL DEFAULT 'CLIENTE',
+  ATTIVO       TINYINT(1) NOT NULL DEFAULT 1,
+  D_CREATO     TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  D_AGG        TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+      'CLIENTI' => "CREATE TABLE IF NOT EXISTS CLIENTI (
+  ID_CLIENTE     INT AUTO_INCREMENT PRIMARY KEY,
+  UID            VARCHAR(64) NULL,
+  COGNOME        VARCHAR(100) NOT NULL,
+  NOME           VARCHAR(100) NOT NULL,
+  DATA_NASCITA   DATE NULL,
+  INDIRIZZO      VARCHAR(255) NULL,
+  CODICE_FISCALE VARCHAR(32)  NULL UNIQUE,
+  TELEFONO       VARCHAR(40)  NULL,
+  EMAIL          VARCHAR(255) NULL,
+  D_CREATO       TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  D_AGG          TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY (UID),
+  CONSTRAINT fk_clienti_utenti FOREIGN KEY (UID) REFERENCES UTENTI(UID) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+      // 3.2: tabella di transcodifica Admin <-> Clienti (many-to-many)
+      'ADMIN_CLIENTI' => "CREATE TABLE IF NOT EXISTS ADMIN_CLIENTI (
+  ADMIN_UID   VARCHAR(64) NOT NULL,
+  ID_CLIENTE  INT NOT NULL,
+  PRIMARY KEY (ADMIN_UID, ID_CLIENTE),
+  KEY (ID_CLIENTE),
+  CONSTRAINT fk_ac_admin FOREIGN KEY (ADMIN_UID)  REFERENCES UTENTI(UID)   ON DELETE CASCADE,
+  CONSTRAINT fk_ac_client FOREIGN KEY (ID_CLIENTE) REFERENCES CLIENTI(ID_CLIENTE) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+    ],
+  ]);
+  exit;
+}
+if ($action === 'list_tables') {
+  try {
+    [$pdoTmp] = connect_pdo($CFG);
+    $rows = $pdoTmp->query("SELECT TABLE_NAME AS name FROM information_schema.tables WHERE table_schema=DATABASE() ORDER BY TABLE_NAME")->fetchAll();
+    echo json_encode(['success'=>true, 'tables'=>$rows]);
+  } catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['success'=>false,'error'=>$e->getMessage()]);
+  }
+  exit;
+}
+
 /* ===== PDO factory (socket > tcp) ===== */
 function connect_pdo(array $cfg): array {
   $opt = [
@@ -289,7 +323,8 @@ function connect_pdo(array $cfg): array {
 }
 
 /* ===== DB CONNECT (serve per diag e rotte protette) ===== */
-$needsDb = ($action === 'diag') || !in_array($action, ['ping', 'whoami', 'socketcheck', 'email_test'], true);
+$publicNoDb = ['ping','whoami','socketcheck','email_test','schema_examples','list_tables'];
+$needsDb = ($action === 'diag') || !in_array($action, $publicNoDb, true);
 
 $pdo = null; $connKind = null; $dsnTried = null;
 if ($needsDb) { [$pdo, $connKind, $dsnTried] = connect_pdo($CFG); }
@@ -315,7 +350,7 @@ if ($action === 'diag') {
 }
 
 /* ===== Auth per rotte protette ===== */ 
-$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag', 'email_test','provision_if_allowed'], true);
+$isPublic = in_array($action, ['ping', 'whoami', 'socketcheck', 'diag', 'email_test','provision_if_allowed','schema_examples','list_tables'], true);
 
 $uid = null; $isAdmin = false; $auth = null;
 
@@ -339,16 +374,6 @@ if (!$isPublic) {
 }
 
 /* ===== Funzioni di ownership ===== */
-// function require_can_access_client(PDO $pdo, int $clientId, string $uid): void {
-//   $chk = $pdo->prepare('SELECT 1 FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?');
-//   $chk->execute([$clientId, $uid]);
-//   if (!$chk->fetch()) {
-//     http_response_code(404);
-//     echo json_encode(['success' => false, 'error' => 'require_can_access_client - ID_CLIENTE not found or not owned']);
-//     exit;
-//   }
-// }
-
 function is_admin(PDO $pdo, string $uid): bool {
   $q = $pdo->prepare("SELECT 1 FROM UTENTI WHERE UID=? AND RUOLO='ADMIN' AND ATTIVO=1 LIMIT 1");
   $q->execute([$uid]);
@@ -366,9 +391,9 @@ function require_client_exists(PDO $pdo, int $cid): void {
 }
 
 /**
- * Consente:
- *  - admin su QUALSIASI cliente (anche con UID NULL)
- *  - utente proprietario (CLIENTI.UID = $uid)
+ * Accesso: 
+ *  - ADMIN: deve avere il cliente assegnato (ADMIN_CLIENTI)
+ *  - USER: deve essere proprietario (CLIENTI.UID = $uid)
  */
 function require_can_access_client(PDO $pdo, int $cid, string $uid): void {
   if ($cid <= 0) {
@@ -379,6 +404,7 @@ function require_can_access_client(PDO $pdo, int $cid, string $uid): void {
 
   if (is_admin($pdo, $uid)) {
     require_client_exists($pdo, $cid);
+    require_admin_can_access_client($pdo, $uid, $cid);
     return;
   }
 
@@ -387,6 +413,20 @@ function require_can_access_client(PDO $pdo, int $cid, string $uid): void {
   if (!$q->fetchColumn()) {
     http_response_code(404);
     echo json_encode(['success'=>false,'error'=>'require_can_access_client - ID_CLIENTE not found or not owned']);
+    exit;
+  }
+}
+
+function admin_can_access_client(PDO $pdo, string $adminUid, int $clientId): bool {
+  $q = $pdo->prepare("SELECT 1 FROM ADMIN_CLIENTI WHERE ADMIN_UID=? AND ID_CLIENTE=? LIMIT 1");
+  $q->execute([$adminUid, $clientId]);
+  return (bool)$q->fetchColumn();
+}
+
+function require_admin_can_access_client(PDO $pdo, string $adminUid, int $clientId): void {
+  if (!admin_can_access_client($pdo, $adminUid, $clientId)) {
+    http_response_code(403);
+    echo json_encode(['success'=>false,'error'=>'Cliente non assegnato a questo admin']);
     exit;
   }
 }
@@ -407,16 +447,13 @@ try {
       $adminEmails = array_filter(array_map('trim', explode(',', getenv('ADMIN_EMAILS') ?: '')));
       $shouldBeAdmin = $email !== '' && in_array(strtolower($email), array_map('strtolower', $adminEmails), true);
 
-      // Se esiste già, aggiorno solo email (e display_name se la colonna esiste),
-      // SENZA toccare RUOLO. Se non esiste, lo creo come CLIENTE (o ADMIN se whitelisted).
-      // Nota: se non hai la colonna DISPLAY_NAME, rimuovi dal SQL i riferimenti a DISPLAY_NAME.
       $sql = "INSERT INTO UTENTI (UID, EMAIL, RUOLO)
               VALUES (?, ?, ?)
               ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL)";
       $stmt = $pdo->prepare($sql);
       $stmt->execute([$uid, $email, $shouldBeAdmin ? 'ADMIN' : 'CLIENTE']);
 
-      // Rileggi il ruolo effettivo (non declassare eventuali admin esistenti)
+      // Rileggi il ruolo effettivo
       $stmt = $pdo->prepare("SELECT RUOLO FROM UTENTI WHERE UID=?");
       $stmt->execute([$uid]);
       $ruolo = strtoupper((string)($stmt->fetchColumn() ?: 'CLIENTE'));
@@ -458,7 +495,7 @@ try {
         break;
       }
 
-      // Se esiste già in UTENTI con ruolo ADMIN → blocca (gli admin non devono avere riga in CLIENTI)
+      // Se esiste già in UTENTI con ruolo ADMIN → blocca
       $chk = $pdo->prepare("SELECT RUOLO, UID FROM UTENTI WHERE EMAIL=?");
       $chk->execute([$email]);
       $rowUser = $chk->fetch();
@@ -472,18 +509,15 @@ try {
       $tempPass = generate_temp_password(12);
       try {
         if ($rowUser) {
-          // utente esiste in UTENTI, prova a prenderlo anche in Firebase
           try {
             $fu = $auth->getUserByEmail($email);
             $uidNew = $fu->uid;
-            // imposta sempre password temporanea e displayName
             $auth->updateUser($uidNew, [
               'password'     => $tempPass,
               'displayName'  => trim("$firstName $lastName"),
               'disabled'     => false,
             ]);
-          } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
-            // in casi rari: riga UTENTI senza utente Firebase → crealo
+          } catch (UserNotFound $e) {
             $created = $auth->createUser([
               'email'        => $email,
               'password'     => $tempPass,
@@ -494,7 +528,6 @@ try {
             $uidNew = $created->uid;
           }
         } else {
-          // non presente in UTENTI → crea direttamente in Firebase
           try {
             $fu = $auth->getUserByEmail($email);
             $uidNew = $fu->uid;
@@ -503,7 +536,7 @@ try {
               'displayName'  => trim("$firstName $lastName"),
               'disabled'     => false,
             ]);
-          } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+          } catch (UserNotFound $e) {
             $created = $auth->createUser([
               'email'        => $email,
               'password'     => $tempPass,
@@ -524,14 +557,12 @@ try {
       try {
         $pdo->beginTransaction();
 
-        // Upsert UTENTI come CLIENTE (mai declassare un ADMIN)
         $pdo->prepare("
           INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
           VALUES (?,?, 'CLIENTE', 1)
           ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL)
         ")->execute([$uidNew, $email]);
 
-        // Inserisci CLIENTI (EMAIL e CF univoci)
         $stmt = $pdo->prepare('
           INSERT INTO CLIENTI
             (UID, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
@@ -542,9 +573,14 @@ try {
         ]);
 
         $clientId = (int)$pdo->lastInsertId();
+
+        // 3.3 (assegnazione): collega il nuovo cliente a QUESTO admin
+        $pdo->prepare("INSERT IGNORE INTO ADMIN_CLIENTI (ADMIN_UID, ID_CLIENTE) VALUES (?,?)")
+            ->execute([$uid, $clientId]);
+
         $pdo->commit();
 
-        // 3) Email di benvenuto con password temporanea
+        // Email di benvenuto
         $mailRes = email_welcome_password($email, trim("$firstName $lastName"), $tempPass);
 
         echo json_encode([
@@ -576,8 +612,6 @@ try {
         break;
       }
 
-      // Deve esistere almeno un cliente con questa email.
-      // Cerco anche nome/cognome (supporto sia NOME/COGNOME sia FIRST_NAME/LAST_NAME).
       $q = $pdo->prepare("
         SELECT
           ID_CLIENTE,
@@ -598,25 +632,19 @@ try {
         break;
       }
 
-      // Ricava un display name sensato
       $first = trim($row['NOME'] ?? ($row['FIRST_NAME'] ?? ''));
       $last  = trim($row['COGNOME'] ?? ($row['LAST_NAME'] ?? ''));
       $fullName = trim("$first $last");
 
-      // Carica Admin SDK qui (siamo in rotta "pubblica")
       $auth = require __DIR__ . '/firebase_admin.php';
 
-      // 1) Trova o crea utente Firebase
       try {
         $fu = $auth->getUserByEmail($email);
         $uidNew = $fu->uid;
-
-        // Se ho un nome e quello in Auth è diverso/vuoto, aggiornalo
         if ($fullName !== '' && $fu->displayName !== $fullName) {
           $auth->updateUser($uidNew, ['displayName' => $fullName]);
         }
-      } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
-        // Crea utente con password temporanea (l'utente poi la reimposta)
+      } catch (UserNotFound $e) {
         $tempPass = generate_temp_password(12);
         $data = [
           'email'         => $email,
@@ -624,21 +652,17 @@ try {
           'emailVerified' => false,
           'disabled'      => false,
         ];
-        if ($fullName !== '') {
-          $data['displayName'] = $fullName;
-        }
+        if ($fullName !== '') $data['displayName'] = $fullName;
         $created = $auth->createUser($data);
         $uidNew  = $created->uid;
       }
 
-      // 2) Upsert in UTENTI come CLIENTE
       $pdo->prepare("
         INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
         VALUES (?,?, 'CLIENTE', 1)
         ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), ATTIVO=1
       ")->execute([$uidNew, $email]);
 
-      // 3) Collega tutti i CLIENTI con quell'email (solo dove UID è NULL/vuoto)
       $pdo->prepare("
         UPDATE CLIENTI
         SET UID = ?
@@ -649,19 +673,20 @@ try {
       echo json_encode([
         'success' => true,
         'uid'     => $uidNew,
-        'displayName' => $fullName, // utile al client (facoltativo)
+        'displayName' => $fullName,
       ]);
       break;
     }
 
     /* =========================
-    *  ADMIN: invia "benvenuto" (credenziali) a CLIENTE
+    *  ADMIN: invia "benvenuto" (credenziali) al CLIENTE
     * ========================= */
     case 'admin_send_welcome': {
       if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
 
       $clientId = (int)($_POST['clientId'] ?? 0);
       if (!$clientId) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'clientId obbligatorio']); break; }
+      require_admin_can_access_client($pdo, $uid, $clientId);
 
       $q = $pdo->prepare("SELECT c.ID_CLIENTE, c.NOME, c.COGNOME, c.EMAIL, u.UID
                           FROM CLIENTI c
@@ -680,7 +705,6 @@ try {
       $fullName = trim(($row['NOME'] ?? '').' '.($row['COGNOME'] ?? ''));
       $uidUser  = (string)$row['UID'];
 
-      // Genera nuova password temporanea e aggiornala su Firebase
       $tempPass = generate_temp_password(12);
       try {
         $auth->updateUser($uidUser, [
@@ -694,7 +718,6 @@ try {
         break;
       }
 
-      // Email "benvenuto" con credenziali
       $mailRes = email_welcome_password($email, $fullName, $tempPass);
       echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'details'=>$mailRes]);
       break;
@@ -708,6 +731,7 @@ try {
 
       $clientId = (int)($_POST['clientId'] ?? 0);
       if (!$clientId) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'clientId obbligatorio']); break; }
+      require_admin_can_access_client($pdo, $uid, $clientId);
 
       $q = $pdo->prepare("SELECT c.ID_CLIENTE, c.NOME, c.COGNOME, c.EMAIL, u.UID
                           FROM CLIENTI c
@@ -739,89 +763,115 @@ try {
         break;
       }
 
-      // Email "reset password"
       $mailRes = email_temp_password($email, $fullName, $tempPass);
       echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'details'=>$mailRes]);
       break;
     }
 
     /* =========================
-    *  ADMIN: crea UTENTE ADMIN (solo UTENTI + Firebase, nessuna riga CLIENTI)
+    *  ADMIN: gestione mappature (3.3 / 3.4)
     * ========================= */
-    case 'admin_create_admin': {
+    case 'admin_link_client': {
       if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $clientId = (int)($_POST['clientId'] ?? 0);
+      require_client_exists($pdo, $clientId);
+      $pdo->prepare("INSERT IGNORE INTO ADMIN_CLIENTI (ADMIN_UID, ID_CLIENTE) VALUES (?,?)")
+          ->execute([$uid, $clientId]);
+      echo json_encode(['success'=>true]);
+      break;
+    }
 
-      $email = trim($_POST['email'] ?? '');
-      $name  = trim($_POST['displayName'] ?? '');
+    case 'admin_unlink_client': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $clientId = (int)($_POST['clientId'] ?? 0);
+      $pdo->prepare("DELETE FROM ADMIN_CLIENTI WHERE ADMIN_UID=? AND ID_CLIENTE=?")
+          ->execute([$uid, $clientId]);
+      echo json_encode(['success'=>true]);
+      break;
+    }
 
-      if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $name === '') {
-        http_response_code(400);
-        echo json_encode(['success'=>false,'error'=>'Email o displayName non validi']);
-        break;
+    // 3.3: bulk link
+    case 'admin_link_clients_bulk': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $ids = trim($_POST['clientIds'] ?? '');
+      if ($ids === '') { http_response_code(400); echo json_encode(['success'=>false,'error'=>'clientIds mancante']); break; }
+      $arr = array_filter(array_map('intval', explode(',', $ids)));
+      if (!$arr) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'Nessun id valido']); break; }
+      $pdo->beginTransaction();
+      $ins = $pdo->prepare("INSERT IGNORE INTO ADMIN_CLIENTI (ADMIN_UID, ID_CLIENTE) VALUES (?,?)");
+      foreach ($arr as $cid) { $ins->execute([$uid, $cid]); }
+      $pdo->commit();
+      echo json_encode(['success'=>true, 'linked'=>count($arr)]);
+      break;
+    }
+
+    // 3.4: set completo (sostituisce i link dell'admin con quelli passati)
+    case 'admin_set_client_links': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $ids = trim($_POST['clientIds'] ?? '');
+      $arr = $ids === '' ? [] : array_filter(array_map('intval', explode(',', $ids)));
+      $pdo->beginTransaction();
+      $pdo->prepare("DELETE FROM ADMIN_CLIENTI WHERE ADMIN_UID=?")->execute([$uid]);
+      if ($arr) {
+        $ins = $pdo->prepare("INSERT IGNORE INTO ADMIN_CLIENTI (ADMIN_UID, ID_CLIENTE) VALUES (?,?)");
+        foreach ($arr as $cid) { $ins->execute([$uid, $cid]); }
       }
+      $pdo->commit();
+      echo json_encode(['success'=>true, 'set_count'=>count($arr)]);
+      break;
+    }
 
-      // Non consentire se esiste già come CLIENTE
-      $chkCli = $pdo->prepare("SELECT 1 FROM CLIENTI WHERE EMAIL=? LIMIT 1");
-      $chkCli->execute([$email]);
-      if ($chkCli->fetch()) {
-        http_response_code(409);
-        echo json_encode(['success'=>false,'error'=>'Esiste già un CLIENTE con questa email']);
-        break;
-      }
+    // util: lista clienti assegnati a me (admin)
+    case 'get_admin_clients': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $stmt = $pdo->prepare("
+        SELECT c.ID_CLIENTE, c.UID, c.COGNOME, c.NOME, c.DATA_NASCITA, c.INDIRIZZO, c.CODICE_FISCALE, c.TELEFONO, c.EMAIL
+        FROM CLIENTI c
+        JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=c.ID_CLIENTE
+        WHERE ac.ADMIN_UID=?
+        ORDER BY c.COGNOME, c.NOME
+      ");
+      $stmt->execute([$uid]);
+      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      break;
+    }
 
-      $tempPass = generate_temp_password(12);
-      try {
-        // Crea/aggiorna in Firebase
-        try {
-          $fu    = $auth->getUserByEmail($email);
-          $uid   = $fu->uid;
-          $auth->updateUser($uid, [
-            'password'    => $tempPass,
-            'displayName' => $name,
-            'disabled'    => false,
-          ]);
-        } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
-          $created = $auth->createUser([
-            'email'        => $email,
-            'password'     => $tempPass,
-            'displayName'  => $name,
-            'emailVerified'=> false,
-            'disabled'     => false,
-          ]);
-          $uid = $created->uid;
-        }
-
-        // Upsert in UTENTI come ADMIN
-        $pdo->prepare("
-          INSERT INTO UTENTI (UID, EMAIL, RUOLO, ATTIVO)
-          VALUES (?,?, 'ADMIN', 1)
-          ON DUPLICATE KEY UPDATE EMAIL=VALUES(EMAIL), RUOLO='ADMIN', ATTIVO=1
-        ")->execute([$uid, $email]);
-
-      } catch (Throwable $e) {
-        http_response_code(500);
-        echo json_encode(['success'=>false,'error'=>'Creazione admin fallita: '.$e->getMessage()]);
-        break;
-      }
-
-      // Invia password temporanea
-      $mailRes = email_temp_password($email, $name, $tempPass);
-      echo json_encode(['success'=>($mailRes['ok'] ?? false) === true, 'uid'=>$uid, 'details'=>$mailRes]);
+    // util: lista admin collegati a un cliente
+    case 'get_client_admins': {
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
+      $clientId = (int)($_GET['clientId'] ?? $_POST['clientId'] ?? 0);
+      require_client_exists($pdo, $clientId);
+      $stmt = $pdo->prepare("
+        SELECT u.UID, u.EMAIL
+        FROM ADMIN_CLIENTI ac
+        JOIN UTENTI u ON u.UID=ac.ADMIN_UID
+        WHERE ac.ID_CLIENTE=?
+        ORDER BY u.EMAIL
+      ");
+      $stmt->execute([$clientId]);
+      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
       break;
     }
 
 
     /* =========================
-     *        CLIENTI
-     * ========================= */
+    *        CLIENTI
+    * ========================= */
     case 'get_clienti': {
       if ($isAdmin) {
-        $stmt = $pdo->query('SELECT ID_CLIENTE, UID, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL
-                             FROM CLIENTI
-                             ORDER BY COGNOME, NOME');
+        $stmt = $pdo->prepare('
+          SELECT c.ID_CLIENTE, c.UID, c.COGNOME, c.NOME, c.DATA_NASCITA, c.INDIRIZZO, c.CODICE_FISCALE, c.TELEFONO, c.EMAIL
+          FROM CLIENTI c
+          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = c.ID_CLIENTE
+          WHERE ac.ADMIN_UID = ?
+          ORDER BY c.COGNOME, c.NOME
+        ');
+        $stmt->execute([$uid]);
       } else {
-        $stmt = $pdo->prepare('SELECT ID_CLIENTE, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL
-                               FROM CLIENTI WHERE UID=? ORDER BY COGNOME, NOME');
+        $stmt = $pdo->prepare('
+          SELECT ID_CLIENTE, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL
+          FROM CLIENTI WHERE UID=? ORDER BY COGNOME, NOME
+        ');
         $stmt->execute([$uid]);
       }
       echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
@@ -829,6 +879,7 @@ try {
     }
 
     case 'insert_cliente': {
+      // Creazione autonoma di un cliente “sciolto” (non assegnato a admin) – opzionale
       $sql = 'INSERT INTO CLIENTI (COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
               VALUES (?, ?, ?, ?, ?, ?, ?)';
       $stmt = $pdo->prepare($sql);
@@ -847,17 +898,11 @@ try {
 
     case 'update_cliente': {
       $clientId = (int)($_POST['id'] ?? 0);
-      if (!$isAdmin) { require_can_access_client($pdo, $clientId, $uid); }
-      else           { require_client_exists($pdo, $clientId); }
+      require_can_access_client($pdo, $clientId, $uid);
 
-      $sql = $isAdmin
-        ? 'UPDATE CLIENTI
-          SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
-          WHERE ID_CLIENTE=?'
-        : 'UPDATE CLIENTI
-          SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
-          WHERE ID_CLIENTE=? AND UID=?';
-
+      $sql = 'UPDATE CLIENTI
+              SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
+              WHERE ID_CLIENTE=?';
       $params = [
         $_POST['lastName']   ?? '',
         $_POST['firstName']  ?? '',
@@ -868,8 +913,6 @@ try {
         $_POST['email']      ?? null,
         $clientId,
       ];
-      if (!$isAdmin) $params[] = $uid;
-
       $stmt = $pdo->prepare($sql);
       $stmt->execute($params);
       echo json_encode(['success' => true]);
@@ -878,23 +921,19 @@ try {
 
     case 'delete_cliente': {
       $clientId = (int)($_POST['id'] ?? 0);
-      if (!$isAdmin) { require_can_access_client($pdo, $clientId, $uid); }
-      else           { require_client_exists($pdo, $clientId); }
+      require_can_access_client($pdo, $clientId, $uid);
 
-      $sql = $isAdmin
-        ? 'DELETE FROM CLIENTI WHERE ID_CLIENTE=?'
-        : 'DELETE FROM CLIENTI WHERE ID_CLIENTE=? AND UID=?';
-
+      $sql = 'DELETE FROM CLIENTI WHERE ID_CLIENTE=?';
       $stmt = $pdo->prepare($sql);
-      $stmt->execute($isAdmin ? [$clientId] : [$clientId, $uid]);
+      $stmt->execute([$clientId]);
       echo json_encode(['success' => true]);
       break;
     }
 
 
     /* =========================
-     *       MISURAZIONI
-     * ========================= */
+    *       MISURAZIONI
+    * ========================= */
     case 'get_misurazioni': {
       $cid = (int)($_GET['clientId'] ?? $_POST['clientId'] ?? 0);
       require_can_access_client($pdo, $cid, $uid);
@@ -975,8 +1014,8 @@ try {
     }
 
     /* =========================
-     *        ESERCIZI (globali)
-     * ========================= */
+    *        ESERCIZI (globali)
+    * ========================= */
     case 'get_esercizi': {
       $stmt = $pdo->query('SELECT * FROM ESERCIZI ORDER BY GRUPPO_MUSCOLARE, NOME');
       echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
@@ -1022,58 +1061,38 @@ try {
     }
 
     /* =========================
-     *   TIPI APPUNTAMENTO (globali)
-     * ========================= */
-    // case 'get_tipo_appuntamento': {
-    //   $stmt = $pdo->query("SELECT ID_AGGETTIVO AS CODICE, DESCRIZIONE FROM REFERENZECOMBO_0099 WHERE ID_CLASSE='TIPO_APPUNTAMENTO' ORDER BY ORDINE");
-    //   echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
-    //   break;
-    // }
-
-    /* =========================
-     *        APPUNTAMENTI
-     * ========================= */
+    *        APPUNTAMENTI
+    * ========================= */
     case 'get_appuntamenti':
       if ($isAdmin) {
-        $stmt = $pdo->query("SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, a.STATO, a.ID_SLOT,
-                                    c.NOME, c.COGNOME
-                              FROM APPUNTAMENTI a
-                              JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
-                              ORDER BY a.DATA_ORA ASC
-                              ");
+        $stmt = $pdo->prepare("
+          SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, a.STATO, a.ID_SLOT,
+                c.NOME, c.COGNOME
+          FROM APPUNTAMENTI a
+          JOIN CLIENTI c        ON a.ID_CLIENTE=c.ID_CLIENTE
+          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=c.ID_CLIENTE
+          WHERE ac.ADMIN_UID = ?
+          ORDER BY a.DATA_ORA ASC
+        ");
+        $stmt->execute([$uid]);
       } else {
-        // NOTA: rimuoviamo il filtro a.UID=? e usiamo SOLO la proprietà del cliente
-        $stmt = $pdo->prepare("SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, a.STATO, a.ID_SLOT,
-                                      c.NOME, c.COGNOME
-                                FROM APPUNTAMENTI a
-                                JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
-                                WHERE c.UID=?
-                                ORDER BY a.DATA_ORA ASC");
+        $stmt = $pdo->prepare("
+          SELECT a.ID_APPUNTAMENTO, a.ID_CLIENTE, a.DATA_ORA, a.TIPOLOGIA, a.NOTE, a.STATO, a.ID_SLOT,
+                c.NOME, c.COGNOME
+          FROM APPUNTAMENTI a
+          JOIN CLIENTI c ON a.ID_CLIENTE=c.ID_CLIENTE
+          WHERE c.UID=?
+          ORDER BY a.DATA_ORA ASC
+        ");
         $stmt->execute([$uid]);
       }
       echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
       break;
 
-    // (Nota: in flusso attuale gli utenti NON creano manualmente appuntamenti senza slot)
-    case 'insert_appuntamento': {
-      $cid = (int)($_POST['clientId'] ?? 0);
-      if (!$isAdmin) { require_can_access_client($pdo, $cid, $uid); }
-
-      $stmt = $pdo->prepare("INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE)
-                             VALUES (?,?,?,?)");
-      $stmt->execute([
-        $cid,
-        $_POST['datetime'] ?? date('Y-m-d H:i:s'),
-        $_POST['typeCode'] ?? 'GENE',
-        $_POST['note']     ?: null,
-      ]);
-      echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
-      break;
-    }
-
     case 'update_appuntamento': {
       $cid = (int)($_POST['clientId'] ?? 0);
       if (!$isAdmin) { require_can_access_client($pdo, $cid, $uid); }
+      else { require_admin_can_access_client($pdo, $uid, $cid); }
 
       $idApp = (int)($_POST['id'] ?? 0);
       if (!$isAdmin) {
@@ -1084,10 +1103,12 @@ try {
         $chk->execute([$idApp, $uid]);
         if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appointment not found']); break; }
       } else {
-        // opzionale: verifica che esista comunque
-        $chk = $pdo->prepare("SELECT 1 FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=?");
-        $chk->execute([$idApp]);
-        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appointment not found']); break; }
+        $chk = $pdo->prepare("SELECT 1
+                              FROM APPUNTAMENTI a
+                              JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=a.ID_CLIENTE
+                              WHERE a.ID_APPUNTAMENTO=? AND ac.ADMIN_UID=?");
+        $chk->execute([$idApp, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appointment not found/assigned']); break; }
       }
 
       $stmt = $pdo->prepare("UPDATE APPUNTAMENTI
@@ -1105,14 +1126,15 @@ try {
     }
 
     case 'update_appuntamento_note':
-      if (!$isAdmin) {
-        http_response_code(403);
-        echo json_encode(['success'=>false,'error'=>'Solo admin']);
-        break;
-      }
+      if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
       $id = (int)($_POST['id'] ?? 0);
       $note = ($_POST['note'] ?? '');
       $note = ($note === '') ? null : $note;
+
+      // verifica appartenenza
+      $chk = $pdo->prepare("SELECT 1 FROM APPUNTAMENTI a JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=a.ID_CLIENTE WHERE a.ID_APPUNTAMENTO=? AND ac.ADMIN_UID=?");
+      $chk->execute([$id, $uid]);
+      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato/assegnato']); break; }
 
       $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET NOTE=? WHERE ID_APPUNTAMENTO=?");
       $stmt->execute([$note, $id]);
@@ -1127,7 +1149,7 @@ try {
 
 
     case 'delete_appuntamento':
-      $id = (int)($_POST['id'] ?? 0); // <-- il client manda 'id'
+      $id = (int)($_POST['id'] ?? 0);
       if (!$id) {
         http_response_code(400);
         echo json_encode(['success'=>false,'error'=>'Parametro id mancante']);
@@ -1135,7 +1157,6 @@ try {
       }
 
       try {
-        // 1) Trova appuntamento + UID proprietario + slot
         $q = $pdo->prepare("
           SELECT A.ID_APPUNTAMENTO, A.ID_CLIENTE, A.ID_SLOT, C.UID
           FROM APPUNTAMENTI A
@@ -1152,14 +1173,14 @@ try {
           break;
         }
 
-        // 2) Se non admin, verifica che l'appuntamento appartenga al tuo UID
-        if (!$isAdmin && $row['UID'] !== $uid) {
+        if ($isAdmin) {
+          require_admin_can_access_client($pdo, $uid, (int)$row['ID_CLIENTE']);
+        } else if ($row['UID'] !== $uid) {
           http_response_code(403);
           echo json_encode(['success'=>false,'error'=>'Forbidden']);
           break;
         }
 
-        // 3) Cancella in transazione e libera la fascia
         $pdo->beginTransaction();
 
         $del = $pdo->prepare("DELETE FROM APPUNTAMENTI WHERE ID_APPUNTAMENTO=?");
@@ -1286,7 +1307,6 @@ try {
         break;
       }
 
-      // 1) Recupera UID del cliente (serve solo per i controlli, NON si salva su APPUNTAMENTI)
       $own = $pdo->prepare("SELECT UID FROM CLIENTI WHERE ID_CLIENTE=?");
       $own->execute([$idCliente]);
       $rowCli = $own->fetch();
@@ -1297,17 +1317,17 @@ try {
       }
       $clienteUid = (string)$rowCli['UID'];
 
-      // Se NON admin, il cliente deve appartenere all’utente loggato
       if (!$isAdmin && $clienteUid !== $uid) {
         http_response_code(403);
         echo json_encode(['success' => false, 'error' => 'Cliente non appartenente all’utente']);
         break;
+      } else if ($isAdmin) {
+        require_admin_can_access_client($pdo, $uid, $idCliente);
       }
 
       try {
         $pdo->beginTransaction();
 
-        // 2) Blocca lo slot e verifica che sia libero
         $q = $pdo->prepare("SELECT TIPOLOGIA, INIZIO, FINE, OCCUPATO FROM FASCE_APPUNTAMENTO WHERE ID_SLOT=? FOR UPDATE");
         $q->execute([$idSlot]);
         $s = $q->fetch();
@@ -1324,7 +1344,6 @@ try {
           break;
         }
 
-        // 3) Evita doppioni: stesso cliente, stessa data/ora pendente/confermato
         $dupe = $pdo->prepare("
           SELECT COUNT(*) c
           FROM APPUNTAMENTI
@@ -1338,10 +1357,8 @@ try {
           break;
         }
 
-        // 4) stato: admin -> confermato (1), altrimenti pendente (0)
         $stato = $isAdmin ? 1 : 0;
 
-        // 5) insert senza UID
         $ins = $pdo->prepare("
           INSERT INTO APPUNTAMENTI (ID_CLIENTE, DATA_ORA, TIPOLOGIA, NOTE, STATO, ID_SLOT)
           VALUES (?,?,?,?,?,?)
@@ -1355,12 +1372,10 @@ try {
           $idSlot,
         ]);
 
-        // 6) Marca fascia occupata
         $pdo->prepare("UPDATE FASCE_APPUNTAMENTO SET OCCUPATO=1 WHERE ID_SLOT=?")->execute([$idSlot]);
 
         $pdo->commit();
 
-        // Notifica admin solo se è un cliente a prenotare
         if (!$isAdmin) {
           $admins = array_filter(array_map('trim', explode(',', getenv('ADMIN_NOTIFY_EMAILS') ?: '')));
           if ($admins) {
@@ -1380,7 +1395,6 @@ try {
           }
         }
 
-
         echo json_encode(['success' => true, 'id_appuntamento' => $pdo->lastInsertId()]);
       } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1395,6 +1409,11 @@ try {
       if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
       $idApp = (int)($_POST['id_appuntamento'] ?? 0);
       if (!$idApp) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_appuntamento obbligatorio']); break; }
+
+      // check appartenenza
+      $chk = $pdo->prepare("SELECT 1 FROM APPUNTAMENTI a JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=a.ID_CLIENTE WHERE a.ID_APPUNTAMENTO=? AND ac.ADMIN_UID=?");
+      $chk->execute([$idApp, $uid]);
+      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato/assegnato']); break; }
 
       $stmt = $pdo->prepare("UPDATE APPUNTAMENTI SET STATO=1 WHERE ID_APPUNTAMENTO=?");
       $stmt->execute([$idApp]);
@@ -1428,6 +1447,11 @@ try {
       if (!$isAdmin) { http_response_code(403); echo json_encode(['success'=>false,'error'=>'Solo admin']); break; }
       $idApp = (int)($_POST['id_appuntamento'] ?? 0);
       if (!$idApp) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'id_appuntamento obbligatorio']); break; }
+
+      // check appartenenza
+      $chk = $pdo->prepare("SELECT 1 FROM APPUNTAMENTI a JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=a.ID_CLIENTE WHERE a.ID_APPUNTAMENTO=? AND ac.ADMIN_UID=?");
+      $chk->execute([$idApp, $uid]);
+      if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Appuntamento non trovato/assegnato']); break; }
 
       try {
         $pdo->beginTransaction();
@@ -1479,22 +1503,39 @@ try {
     }
 
     /* =========================
-     *   SCHEDE ESERCIZI (TESTA)
-     * ========================= */
+    *   SCHEDE ESERCIZI (TESTA)
+    * ========================= */
     case 'get_schede_testa': {
       $clientId = isset($_GET['clientId']) ? (int)$_GET['clientId'] : (isset($_POST['clientId']) ? (int)$_POST['clientId'] : 0);
 
       if ($isAdmin) {
         if ($clientId) {
-          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
+          require_admin_can_access_client($pdo, $uid, $clientId);
+          $stmt = $pdo->prepare("
+            SELECT st.*
+            FROM SCHEDE_ESERCIZI_TESTA st
+            WHERE st.ID_CLIENTE=? 
+            ORDER BY st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC
+          ");
           $stmt->execute([$clientId]);
         } else {
-          $stmt = $pdo->query("SELECT * FROM SCHEDE_ESERCIZI_TESTA ORDER BY ID_CLIENTE ASC,DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
+          $stmt = $pdo->prepare("
+            SELECT st.*
+            FROM SCHEDE_ESERCIZI_TESTA st
+            JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = st.ID_CLIENTE
+            WHERE ac.ADMIN_UID = ?
+            ORDER BY st.ID_CLIENTE ASC, st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC
+          ");
+          $stmt->execute([$uid]);
         }
       } else {
         if ($clientId) {
           require_can_access_client($pdo, $clientId, $uid);
-          $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_TESTA WHERE ID_CLIENTE=? ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC");
+          $stmt = $pdo->prepare("
+            SELECT * FROM SCHEDE_ESERCIZI_TESTA 
+            WHERE ID_CLIENTE=? 
+            ORDER BY DATA_INIZIO DESC, TIPO_SCHEDA ASC, ABIL DESC
+          ");
           $stmt->execute([$clientId]);
         } else {
           $stmt = $pdo->prepare("
@@ -1502,7 +1543,8 @@ try {
             FROM SCHEDE_ESERCIZI_TESTA st
             JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
             WHERE c.UID=?
-            ORDER BY st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC");
+            ORDER BY st.DATA_INIZIO DESC, st.TIPO_SCHEDA ASC, st.ABIL DESC
+          ");
           $stmt->execute([$uid]);
         }
       }
@@ -1513,6 +1555,7 @@ try {
     case 'insert_scheda_testa': {
       $clientId = (int)($_POST['clientId'] ?? 0);
       if (!$isAdmin) { require_can_access_client($pdo, $clientId, $uid); }
+      else { require_admin_can_access_client($pdo, $uid, $clientId); }
 
       $tipoScheda = $_POST['tipoScheda'] ?? null; // 'A','B','C'
       $validita   = (int)($_POST['validita'] ?? 2); // mesi
@@ -1526,7 +1569,6 @@ try {
       $stmt = $pdo->prepare($sql);
       $stmt->execute([$clientId, $tipoScheda, $validita, $dataInizio, $note, $abil]);
 
-      // Recupera email cliente
       $em = $pdo->prepare("SELECT EMAIL, NOME, COGNOME FROM CLIENTI WHERE ID_CLIENTE=?");
       $em->execute([$clientId]);
       $cli = $em->fetch();
@@ -1551,7 +1593,6 @@ try {
       $clientId   = (int)($_POST['clientId'] ?? 0);
       $idSchedat  = (int)($_POST['id_schedat'] ?? 0);
 
-      // ownership della scheda (tramite cliente)
       if (!$isAdmin) {
         $chk = $pdo->prepare("
           SELECT 1
@@ -1560,6 +1601,14 @@ try {
           WHERE st.ID_SCHEDAT=? AND c.UID=?");
         $chk->execute([$idSchedat, $uid]);
         if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      } else {
+        $chk = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND ac.ADMIN_UID=?");
+        $chk->execute([$idSchedat, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
       }
 
       $tipoScheda = $_POST['tipoScheda'] ?? null;
@@ -1588,6 +1637,14 @@ try {
           WHERE st.ID_SCHEDAT=? AND c.UID=?");
         $chk->execute([$id, $uid]);
         if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      } else {
+        $chk = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE=st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND ac.ADMIN_UID=?");
+        $chk->execute([$id, $uid]);
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
       }
       $stmt = $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_TESTA WHERE ID_SCHEDAT=?");
       $stmt->execute([$id]);
@@ -1596,13 +1653,12 @@ try {
     }
 
     /* =========================
-     *   SCHEDE ESERCIZI (DETTA)
-     * ========================= */
+    *   SCHEDE ESERCIZI (DETTA)
+    * ========================= */
     case 'get_voci_scheda': {
       $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
       if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'ID_SCHEDAT mancante']); break; }
 
-      // ownership check
       if (!$isAdmin) {
         $own = $pdo->prepare("
           SELECT 1
@@ -1611,6 +1667,14 @@ try {
           WHERE st.ID_SCHEDAT=? AND c.UID=?");
         $own->execute([$idScheda, $uid]);
         if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      } else {
+        $own = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND ac.ADMIN_UID=?");
+        $own->execute([$idScheda, $uid]);
+        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
       }
 
       $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAT=? ORDER BY ORDINE");
@@ -1621,7 +1685,7 @@ try {
 
     case 'insert_voce_scheda': {
       $idScheda = (int)($_POST['id_schedat'] ?? 0);
-      // ownership check
+
       if (!$isAdmin) {
         $own = $pdo->prepare("
           SELECT 1
@@ -1630,6 +1694,14 @@ try {
           WHERE st.ID_SCHEDAT=? AND c.UID=?");
         $own->execute([$idScheda, $uid]);
         if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
+      } else {
+        $own = $pdo->prepare("
+          SELECT 1
+          FROM SCHEDE_ESERCIZI_TESTA st
+          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = st.ID_CLIENTE
+          WHERE st.ID_SCHEDAT=? AND ac.ADMIN_UID=?");
+        $own->execute([$idScheda, $uid]);
+        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
       }
 
       $serie       = (int)($_POST['serie']       ?? 0);
@@ -1654,6 +1726,7 @@ try {
       break;
     }
 
+// £££ SIAMO ARRIVATI QUI CON LE MODIFICHE!!! DA CONTINUARE CON QUESTA SECONDA PARTE £££
     case 'update_voce_scheda': {
       $idVoce   = (int)($_POST['id_voce'] ?? 0);
       if (!$isAdmin) {
@@ -1664,7 +1737,7 @@ try {
           JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
           WHERE sd.ID_SCHEDAD=? AND c.UID=?");
         $chk->execute([$idVoce, $uid]);
-        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'update_voce_scheda - ID_SCHEDAD or  not found']); break; }
+        if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'update_voce_scheda - ID_SCHEDAD not found']); break; }
       }
 
       $serie       = (int)($_POST['serie']       ?? 0);
@@ -1818,10 +1891,10 @@ try {
         break;
       }
 
-      $sql = "INSERT INTO COMUNICAZIONI (TIPOLOGIA, INIZIO, FINE, TESTO, ABIL)
-              VALUES (?,?,?,?,?)";
-      $stmt = $pdo->prepare($sql);
-      $stmt->execute([$tipologia, $inizio, $fine, $testo, $abil ? 1 : 0]);
+    $sql = "INSERT INTO COMUNICAZIONI (TIPOLOGIA, INIZIO, FINE, TITOLO, TESTO, ABIL)
+            VALUES (?,?,?,?,?,?)";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$tipologia, $inizio, $fine, $titolo, $testo, $abil ? 1 : 0]);
 
       echo json_encode(['success'=>true, 'id'=>$pdo->lastInsertId()]);
       break;
