@@ -483,9 +483,6 @@ try {
       // Dati cliente
       $lastName   = trim($_POST['lastName']   ?? '');
       $firstName  = trim($_POST['firstName']  ?? '');
-      $birthDate  = $_POST['birthDate']       ?? date('Y-m-d');
-      $address    = ($_POST['address']    ?? '') ?: null;
-      $fiscalCode = ($_POST['fiscalCode'] ?? '') ?: null;
       $phone      = ($_POST['phone']      ?? '') ?: null;
       $email      = trim($_POST['email']  ?? '');
 
@@ -565,11 +562,11 @@ try {
 
         $stmt = $pdo->prepare('
           INSERT INTO CLIENTI
-            (UID, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
+            (UID, COGNOME, NOME, TELEFONO, EMAIL)
           VALUES (?,?,?,?,?,?,?,?)
         ');
         $stmt->execute([
-          $uidNew, $lastName, $firstName, $birthDate, $address, $fiscalCode, $phone, $email
+          $uidNew, $lastName, $firstName, $phone, $email
         ]);
 
         $clientId = (int)$pdo->lastInsertId();
@@ -860,7 +857,7 @@ try {
     case 'get_clienti': {
       if ($isAdmin) {
         $stmt = $pdo->prepare('
-          SELECT c.ID_CLIENTE, c.UID, c.COGNOME, c.NOME, c.DATA_NASCITA, c.INDIRIZZO, c.CODICE_FISCALE, c.TELEFONO, c.EMAIL
+          SELECT c.ID_CLIENTE, c.UID, c.COGNOME, c.NOME, c.TELEFONO, c.EMAIL
           FROM CLIENTI c
           JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = c.ID_CLIENTE
           WHERE ac.ADMIN_UID = ?
@@ -869,7 +866,7 @@ try {
         $stmt->execute([$uid]);
       } else {
         $stmt = $pdo->prepare('
-          SELECT ID_CLIENTE, COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL
+          SELECT ID_CLIENTE, COGNOME, NOME, TELEFONO, EMAIL
           FROM CLIENTI WHERE UID=? ORDER BY COGNOME, NOME
         ');
         $stmt->execute([$uid]);
@@ -880,15 +877,12 @@ try {
 
     case 'insert_cliente': {
       // Creazione autonoma di un cliente “sciolto” (non assegnato a admin) – opzionale
-      $sql = 'INSERT INTO CLIENTI (COGNOME, NOME, DATA_NASCITA, INDIRIZZO, CODICE_FISCALE, TELEFONO, EMAIL)
-              VALUES (?, ?, ?, ?, ?, ?, ?)';
+      $sql = 'INSERT INTO CLIENTI (COGNOME, NOME, TELEFONO, EMAIL)
+              VALUES (?, ?, ?, ?)';
       $stmt = $pdo->prepare($sql);
       $stmt->execute([
         $_POST['lastName']   ?? '',
         $_POST['firstName']  ?? '',
-        $_POST['birthDate']  ?? date('Y-m-d'),
-        $_POST['address']    ?? null,
-        $_POST['fiscalCode'] ?? null,
         $_POST['phone']      ?? null,
         $_POST['email']      ?? null,
       ]);
@@ -901,14 +895,11 @@ try {
       require_can_access_client($pdo, $clientId, $uid);
 
       $sql = 'UPDATE CLIENTI
-              SET COGNOME=?,NOME=?,DATA_NASCITA=?,INDIRIZZO=?,CODICE_FISCALE=?,TELEFONO=?,EMAIL=?
+              SET COGNOME=?,NOME=?,TELEFONO=?,EMAIL=?
               WHERE ID_CLIENTE=?';
       $params = [
         $_POST['lastName']   ?? '',
         $_POST['firstName']  ?? '',
-        $_POST['birthDate']  ?? date('Y-m-d'),
-        $_POST['address']    ?? null,
-        $_POST['fiscalCode'] ?? null,
         $_POST['phone']      ?? null,
         $_POST['email']      ?? null,
         $clientId,
