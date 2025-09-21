@@ -1763,14 +1763,73 @@ try {
         if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
       }
 
-      $stmt = $pdo->prepare("SELECT * FROM SCHEDE_ESERCIZI_DETTA WHERE ID_SCHEDAT=? ORDER BY ORDINE");
+      // 1) Voci della scheda
+      $stmt = $pdo->prepare("
+        SELECT sd.*
+        FROM SCHEDE_ESERCIZI_DETTA sd
+        WHERE sd.ID_SCHEDAT=?
+        ORDER BY sd.ORDINE
+      ");
       $stmt->execute([$idScheda]);
-      echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
+      $voci = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+      if (!$voci) { echo json_encode(['success'=>true,'data'=>[]]); break; }
+
+      // 2) Serie per le voci trovate
+      $ids = array_column($voci, 'ID_SCHEDAD');
+      $in  = implode(',', array_fill(0, count($ids), '?'));
+      $s2 = $pdo->prepare("
+        SELECT ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE
+        FROM SCHEDE_ESERCIZI_DETTA_PESO
+        WHERE ID_SCHEDAD IN ($in)
+        ORDER BY ID_SCHEDAD, SERIE
+      ");
+      $s2->execute($ids);
+      $righe = $s2->fetchAll(PDO::FETCH_ASSOC);
+
+      $map = [];
+      foreach ($righe as $r) {
+        $map[$r['ID_SCHEDAD']][] = [
+          'serie'       => (int)$r['SERIE'],
+          'ripetizioni' => (int)$r['RIPETIZIONI'],
+          'peso'        => isset($r['PESO']) ? (float)$r['PESO'] : null,
+          'note'        => $r['NOTE'],
+        ];
+      }
+
+      // 3) Output coerente con vecchia sintassi (+ estensione piramidale)
+      $out = [];
+      foreach ($voci as $v) {
+        $serieList = $map[$v['ID_SCHEDAD']] ?? [];
+        if (count($serieList) <= 1) {
+          $s = $serieList[0] ?? null; // non piramidale (compresso)
+          $out[] = array_merge($v, [
+            'piramidale'  => false,
+            'serie'       => (int)($s['serie'] ?? 0),
+            'ripetizioni' => (int)($s['ripetizioni'] ?? 0),
+            'peso'        => isset($s['peso']) ? (float)$s['peso'] : null,
+            'elenco_serie'=> [],
+          ]);
+        } else {
+          // piramidale
+          $out[] = array_merge($v, [
+            'piramidale'  => true,
+            'serie'       => 0,
+            'ripetizioni' => 0,
+            'peso'        => null,
+            'elenco_serie'=> $serieList,
+          ]);
+        }
+      }
+
+      echo json_encode(['success'=>true,'data'=>$out], JSON_UNESCAPED_UNICODE);
       break;
     }
 
-    case 'insert_voce_scheda': {
+
+   case 'insert_voce_scheda': {
       $idScheda = (int)($_POST['id_schedat'] ?? 0);
+      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'ID_SCHEDAT mancante']); break; }
 
       if (!$isAdmin) {
         $own = $pdo->prepare("
@@ -1790,31 +1849,71 @@ try {
         if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
       }
 
-      $serie       = (int)($_POST['serie']       ?? 0);
-      $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
-      $peso        = (int)($_POST['peso']      ?? 0);
-      $ordine      = (int)($_POST['ordine']      ?? 0);
+      $idEsercizio = $_POST['id_esercizio'] ?? null;
+      $ordine      = (int)($_POST['ordine'] ?? 0);
+      $note        = (isset($_POST['note']) && $_POST['note'] !== '') ? $_POST['note'] : null;
 
-      $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA
-              (ID_SCHEDAT, ID_ESERCIZIO, SERIE, RIPETIZIONI, PESO, ORDINE, NOTE)
-              VALUES (?,?,?,?,?,?,?)";
+      // Compatibilità: accetto sia formato compresso che piramidale
+      $piramidale  = filter_var($_POST['piramidale'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
+      $serie       = (int)($_POST['serie'] ?? 0);
+      $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
+      $peso        = isset($_POST['peso']) ? ($_POST['peso'] === '' ? null : $_POST['peso']) : null;
+      $elenco      = isset($_POST['elenco_serie']) ? json_decode((string)$_POST['elenco_serie'], true) : [];
+
+      $pdo->beginTransaction();
+
+      // 1) Inserisco la voce (solo campi della DETTA; serie/peso vanno nella tabella figlia)
+      $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA (ID_SCHEDAT, ID_ESERCIZIO, ORDINE, NOTE)
+              VALUES (?,?,?,?)";
       $stmt = $pdo->prepare($sql);
-      $stmt->execute([
-        $idScheda,
-        $_POST['id_esercizio'] ?? null,
-        $serie,
-        $ripetizioni,
-        $peso,
-        $ordine,
-        ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
-      ]);
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      $stmt->execute([$idScheda, $idEsercizio, $ordine, $note]);
+      $idVoce = (int)$pdo->lastInsertId();
+
+      // 2) Inserisco le serie
+      if ($piramidale) {
+        if (!is_array($elenco) || count($elenco) === 0) {
+          throw new RuntimeException('elenco_serie mancante per piramidale');
+        }
+        usort($elenco, fn($a,$b)=>($a['serie']??0)<=>($b['serie']??0));
+        for ($i=0; $i<count($elenco); $i++) {
+          $atteso = $i+1;
+          $s = (int)($elenco[$i]['serie'] ?? 0);
+          if ($s !== $atteso) throw new RuntimeException("Serie non contigue: atteso $atteso, trovato $s");
+        }
+        $ins = $pdo->prepare("
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
+          VALUES (:id, :ser, :rip, :peso, :note)
+        ");
+        foreach ($elenco as $r) {
+          $ins->execute([
+            ':id'   => $idVoce,
+            ':ser'  => (int)$r['serie'],
+            ':rip'  => (int)$r['ripetizioni'],
+            ':peso' => array_key_exists('peso',$r) ? $r['peso'] : null,
+            ':note' => $r['note'] ?? null,
+          ]);
+        }
+      } else {
+        // formato "compresso": una sola riga con n° serie totali
+        if ($serie <= 0 || $ripetizioni <= 0) {
+          throw new RuntimeException('Valori non validi: serie/ripetizioni');
+        }
+        $ins = $pdo->prepare("
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
+          VALUES (?,?,?,?,?)
+        ");
+        $ins->execute([$idVoce, $serie, $ripetizioni, $peso, null]);
+      }
+
+      $pdo->commit();
+      echo json_encode(['success'=>true,'insertId'=>$idVoce]);
       break;
     }
 
-// £££ SIAMO ARRIVATI QUI CON LE MODIFICHE!!! DA CONTINUARE CON QUESTA SECONDA PARTE £££
     case 'update_voce_scheda': {
-      $idVoce   = (int)($_POST['id_voce'] ?? 0);
+      $idVoce = (int)($_POST['id_voce'] ?? 0);
+      if (!$idVoce) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'ID_SCHEDAD mancante']); break; }
+
       if (!$isAdmin) {
         $chk = $pdo->prepare("
           SELECT 1
@@ -1826,30 +1925,71 @@ try {
         if (!$chk->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'update_voce_scheda - ID_SCHEDAD not found']); break; }
       }
 
-      $serie       = (int)($_POST['serie']       ?? 0);
-      $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
-      $peso        = (int)($_POST['peso']      ?? 0);
-      $ordine      = (int)($_POST['ordine']      ?? 0);
+      $idEsercizio = $_POST['id_esercizio'] ?? null;
+      $ordine      = (int)($_POST['ordine'] ?? 0);
+      $note        = (isset($_POST['note']) && $_POST['note'] !== '') ? $_POST['note'] : null;
 
+      $piramidale  = filter_var($_POST['piramidale'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
+      $serie       = (int)($_POST['serie'] ?? 0);
+      $ripetizioni = (int)($_POST['ripetizioni'] ?? 0);
+      $peso        = isset($_POST['peso']) ? ($_POST['peso'] === '' ? null : $_POST['peso']) : null;
+      $elenco      = isset($_POST['elenco_serie']) ? json_decode((string)$_POST['elenco_serie'], true) : [];
+
+      $pdo->beginTransaction();
+
+      // 1) Aggiorno voce (campi DETTA)
       $sql = "UPDATE SCHEDE_ESERCIZI_DETTA
-              SET ID_ESERCIZIO=?, SERIE=?, RIPETIZIONI=?, PESO=?, ORDINE=?, NOTE=?
+              SET ID_ESERCIZIO=?, ORDINE=?, NOTE=?
               WHERE ID_SCHEDAD=?";
       $stmt = $pdo->prepare($sql);
-      $stmt->execute([
-        $_POST['id_esercizio'] ?? null,
-        $serie,
-        $ripetizioni,
-        $peso,
-        $ordine,
-        ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null,
-        $idVoce,
-      ]);
+      $stmt->execute([$idEsercizio, $ordine, $note, $idVoce]);
+
+      // 2) Rimpiazzo le serie
+      $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_DETTA_PESO WHERE ID_SCHEDAD=?")->execute([$idVoce]);
+
+      if ($piramidale) {
+        if (!is_array($elenco) || count($elenco) === 0) {
+          throw new RuntimeException('elenco_serie mancante per piramidale');
+        }
+        usort($elenco, fn($a,$b)=>($a['serie']??0)<=>($b['serie']??0));
+        for ($i=0; $i<count($elenco); $i++) {
+          $atteso = $i+1;
+          $s = (int)($elenco[$i]['serie'] ?? 0);
+          if ($s !== $atteso) throw new RuntimeException("Serie non contigue: atteso $atteso, trovato $s");
+        }
+        $ins = $pdo->prepare("
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
+          VALUES (:id, :ser, :rip, :peso, :note)
+        ");
+        foreach ($elenco as $r) {
+          $ins->execute([
+            ':id'   => $idVoce,
+            ':ser'  => (int)$r['serie'],
+            ':rip'  => (int)$r['ripetizioni'],
+            ':peso' => array_key_exists('peso',$r) ? $r['peso'] : null,
+            ':note' => $r['note'] ?? null,
+          ]);
+        }
+      } else {
+        if ($serie <= 0 || $ripetizioni <= 0) {
+          throw new RuntimeException('Valori non validi: serie/ripetizioni');
+        }
+        $ins = $pdo->prepare("
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
+          VALUES (?,?,?,?,?)
+        ");
+        $ins->execute([$idVoce, $serie, $ripetizioni, $peso, null]);
+      }
+
+      $pdo->commit();
       echo json_encode(['success'=>true]);
       break;
     }
 
     case 'delete_voce_scheda': {
       $idVoce = (int)($_POST['id_voce'] ?? 0);
+      if (!$idVoce) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'ID_SCHEDAD mancante']); break; }
+
       $chk = $pdo->prepare("
         SELECT 1
         FROM SCHEDE_ESERCIZI_DETTA sd
@@ -1864,6 +2004,7 @@ try {
       echo json_encode(['success'=>true]);
       break;
     }
+
 
     /* =========================
      *     GRUPPI MUSCOLARI (globali)
