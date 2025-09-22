@@ -1649,12 +1649,30 @@ try {
       $note       = ($_POST['note'] ?? '') !== '' ? $_POST['note'] : null;
       $abil       = (int)($_POST['abil'] ?? 1);
 
+      // 1) INSERT
       $sql = "INSERT INTO SCHEDE_ESERCIZI_TESTA
               (ID_CLIENTE, TIPO_SCHEDA, VALIDITA, DATA_INIZIO, NOTE, ABIL)
               VALUES (?,?,?,?,?,?)";
       $stmt = $pdo->prepare($sql);
       $stmt->execute([$clientId, $tipoScheda, $validita, $dataInizio, $note, $abil]);
 
+      // 2) Prova a leggere l'ID in modo affidabile
+      $insertId = (int)$pdo->lastInsertId();
+      if ($insertId === 0) {
+        // Fallback robusto: ripesca l'ultima riga per chiave “naturale”
+        // (se possibile, aggiungi una UNIQUE su (ID_CLIENTE, DATA_INIZIO, TIPO_SCHEDA, ABIL, NOTE) o almeno timestamp di creazione)
+        $stmt2 = $pdo->prepare("
+          SELECT ID_SCHEDAT
+          FROM SCHEDE_ESERCIZI_TESTA
+          WHERE ID_CLIENTE = ? AND DATA_INIZIO = ? AND TIPO_SCHEDA <=> ? AND ABIL = ?
+          ORDER BY ID_SCHEDAT DESC
+          LIMIT 1
+        ");
+        $stmt2->execute([$clientId, $dataInizio, $tipoScheda, $abil]);
+        $insertId = (int)($stmt2->fetchColumn() ?: 0);
+      }
+
+      // (facoltativo) invio mail
       $em = $pdo->prepare("SELECT EMAIL, NOME, COGNOME FROM CLIENTI WHERE ID_CLIENTE=?");
       $em->execute([$clientId]);
       $cli = $em->fetch();
@@ -1671,7 +1689,7 @@ try {
         ]);
       }
 
-      echo json_encode(['success'=>true,'insertId'=>$pdo->lastInsertId()]);
+      echo json_encode(['success'=>true,'insertId'=>$insertId]);
       break;
     }
 
