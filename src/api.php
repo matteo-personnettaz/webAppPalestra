@@ -1797,7 +1797,8 @@ try {
       $ids = array_column($voci, 'ID_SCHEDAD');
       $in  = implode(',', array_fill(0, count($ids), '?'));
       $s2 = $pdo->prepare("
-        SELECT ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE
+        SELECT ID_SCHEDAD, SERIE, RIPETIZIONI, PESO,
+              TECNICA_INTENSITA
         FROM SCHEDE_ESERCIZI_DETTA_PESO
         WHERE ID_SCHEDAD IN ($in)
         ORDER BY ID_SCHEDAD, SERIE
@@ -1808,10 +1809,11 @@ try {
       $map = [];
       foreach ($righe as $r) {
         $map[$r['ID_SCHEDAD']][] = [
-          'serie'       => (int)$r['SERIE'],
-          'ripetizioni' => (int)$r['RIPETIZIONI'],
-          'peso'        => isset($r['PESO']) ? (float)$r['PESO'] : null,
-          'note'        => $r['NOTE'],
+          'serie'              => (int)$r['SERIE'],
+          'ripetizioni'        => (int)$r['RIPETIZIONI'],
+          'peso'               => isset($r['PESO']) ? (float)$r['PESO'] : null,
+          // chiave nuova: tecnica_intensita (compat in lettura con eventuali client vecchi che cercavano "note")
+          'tecnica_intensita'  => ($r['TECNICA_INTENSITA'] ?? null),
         ];
       }
 
@@ -1898,29 +1900,37 @@ try {
           $s = (int)($elenco[$i]['serie'] ?? 0);
           if ($s !== $atteso) throw new RuntimeException("Serie non contigue: atteso $atteso, trovato $s");
         }
+
         $ins = $pdo->prepare("
-          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
-          VALUES (:id, :ser, :rip, :peso, :note)
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO
+            (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, TECNICA_INTENSITA, D_AGG)
+          VALUES (:id, :ser, :rip, :peso, :tec, NOW())
         ");
+
         foreach ($elenco as $r) {
+          // compat: se arriva 'note' la consideriamo come tecnica_intensita
+          $tec = $r['tecnica_intensita'] ?? $r['note'] ?? null;
           $ins->execute([
-            ':id'   => $idVoce,
-            ':ser'  => (int)$r['serie'],
-            ':rip'  => (int)$r['ripetizioni'],
-            ':peso' => array_key_exists('peso',$r) ? $r['peso'] : null,
-            ':note' => $r['note'] ?? null,
+            ':id'  => $idVoce,
+            ':ser' => (int)$r['serie'],
+            ':rip' => (int)$r['ripetizioni'],
+            ':peso'=> array_key_exists('peso',$r) ? $r['peso'] : null,
+            ':tec' => ($tec !== '' ? $tec : null),
           ]);
         }
       } else {
-        // formato "compresso": una sola riga con n° serie totali
         if ($serie <= 0 || $ripetizioni <= 0) {
           throw new RuntimeException('Valori non validi: serie/ripetizioni');
         }
+        // se nel POST arriva tecnica_intensita (singola), la mettiamo sulla riga "compressa"
+        $tecSingola = $_POST['tecnica_intensita'] ?? $_POST['note'] ?? null;
+
         $ins = $pdo->prepare("
-          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
-          VALUES (?,?,?,?,?)
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO
+            (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, TECNICA_INTENSITA, D_AGG)
+          VALUES (?,?,?,?,?, NOW())
         ");
-        $ins->execute([$idVoce, $serie, $ripetizioni, $peso, null]);
+        $ins->execute([$idVoce, $serie, $ripetizioni, $peso, ($tecSingola !== '' ? $tecSingola : null)]);
       }
 
       $pdo->commit();
@@ -1975,28 +1985,34 @@ try {
           $s = (int)($elenco[$i]['serie'] ?? 0);
           if ($s !== $atteso) throw new RuntimeException("Serie non contigue: atteso $atteso, trovato $s");
         }
+
         $ins = $pdo->prepare("
-          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
-          VALUES (:id, :ser, :rip, :peso, :note)
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO
+            (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, TECNICA_INTENSITA, D_AGG)
+          VALUES (:id, :ser, :rip, :peso, :tec, NOW())
         ");
         foreach ($elenco as $r) {
+          $tec = $r['tecnica_intensita'] ?? $r['note'] ?? null; // compat
           $ins->execute([
-            ':id'   => $idVoce,
-            ':ser'  => (int)$r['serie'],
-            ':rip'  => (int)$r['ripetizioni'],
-            ':peso' => array_key_exists('peso',$r) ? $r['peso'] : null,
-            ':note' => $r['note'] ?? null,
+            ':id'  => $idVoce,
+            ':ser' => (int)$r['serie'],
+            ':rip' => (int)$r['ripetizioni'],
+            ':peso'=> array_key_exists('peso',$r) ? $r['peso'] : null,
+            ':tec' => ($tec !== '' ? $tec : null),
           ]);
         }
       } else {
         if ($serie <= 0 || $ripetizioni <= 0) {
           throw new RuntimeException('Valori non validi: serie/ripetizioni');
         }
+        $tecSingola = $_POST['tecnica_intensita'] ?? $_POST['note'] ?? null;
+
         $ins = $pdo->prepare("
-          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, NOTE)
-          VALUES (?,?,?,?,?)
+          INSERT INTO SCHEDE_ESERCIZI_DETTA_PESO
+            (ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, TECNICA_INTENSITA, D_AGG)
+          VALUES (?,?,?,?,?, NOW())
         ");
-        $ins->execute([$idVoce, $serie, $ripetizioni, $peso, null]);
+        $ins->execute([$idVoce, $serie, $ripetizioni, $peso, ($tecSingola !== '' ? $tecSingola : null)]);
       }
 
       $pdo->commit();
