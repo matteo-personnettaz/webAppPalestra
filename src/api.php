@@ -1821,23 +1821,34 @@ try {
       $out = [];
       foreach ($voci as $v) {
         $serieList = $map[$v['ID_SCHEDAD']] ?? [];
-        if (count($serieList) <= 1) {
-          $s = $serieList[0] ?? null; // non piramidale (compresso)
+
+        if (count($serieList) == 0) {
+          // Nessuna riga peso: mantieni compatibilità
           $out[] = array_merge($v, [
-            'piramidale'  => false,
-            'serie'       => (int)($s['serie'] ?? 0),
-            'ripetizioni' => (int)($s['ripetizioni'] ?? 0),
-            'peso'        => isset($s['peso']) ? (float)$s['peso'] : null,
-            'elenco_serie'=> [],
+            'piramidale'   => false,
+            'serie'        => 0,
+            'ripetizioni'  => 0,
+            'peso'         => null,
+            'elenco_serie' => [],
+          ]);
+        } else if (count($serieList) == 1) {
+          // NON piramidale con una sola riga → tieni anche elenco_serie[0] (così rientra tecnica_intensita)
+          $s = $serieList[0];
+          $out[] = array_merge($v, [
+            'piramidale'   => false,
+            'serie'        => (int)$s['serie'],
+            'ripetizioni'  => (int)$s['ripetizioni'],
+            'peso'         => isset($s['peso']) ? (float)$s['peso'] : null,
+            'elenco_serie' => [$s], // <-- IMPORTANTE: ora rientra tecnica_intensita
           ]);
         } else {
           // piramidale
           $out[] = array_merge($v, [
-            'piramidale'  => true,
-            'serie'       => 0,
-            'ripetizioni' => 0,
-            'peso'        => null,
-            'elenco_serie'=> $serieList,
+            'piramidale'   => true,
+            'serie'        => 0,
+            'ripetizioni'  => 0,
+            'peso'         => null,
+            'elenco_serie' => $serieList,
           ]);
         }
       }
