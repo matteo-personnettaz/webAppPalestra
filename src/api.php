@@ -1883,6 +1883,7 @@ try {
       $idEsercizio = $_POST['id_esercizio'] ?? null;
       $ordine      = (int)($_POST['ordine'] ?? 0);
       $note        = (isset($_POST['note']) && $_POST['note'] !== '') ? $_POST['note'] : null;
+      $superset    = filter_var($_POST['superset'] ?? 'false', FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
 
       // Compatibilità: accetto sia formato compresso che piramidale
       $piramidale  = filter_var($_POST['piramidale'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
@@ -1894,10 +1895,10 @@ try {
       $pdo->beginTransaction();
 
       // 1) Inserisco la voce (solo campi della DETTA; serie/peso vanno nella tabella figlia)
-      $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA (ID_SCHEDAT, ID_ESERCIZIO, ORDINE, NOTE)
-              VALUES (?,?,?,?)";
+      $sql = "INSERT INTO SCHEDE_ESERCIZI_DETTA (ID_SCHEDAT, ID_ESERCIZIO, ORDINE, NOTE, SUPERSET)
+              VALUES (?,?,?,?,?)";
       $stmt = $pdo->prepare($sql);
-      $stmt->execute([$idScheda, $idEsercizio, $ordine, $note]);
+      $stmt->execute([$idScheda, $idEsercizio, $ordine, $note, $superset]);
       $idVoce = (int)$pdo->lastInsertId();
 
       // 2) Inserisco le serie
@@ -1967,6 +1968,7 @@ try {
       $idEsercizio = $_POST['id_esercizio'] ?? null;
       $ordine      = (int)($_POST['ordine'] ?? 0);
       $note        = (isset($_POST['note']) && $_POST['note'] !== '') ? $_POST['note'] : null;
+      $superset    = filter_var($_POST['superset'] ?? 'false', FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
 
       $piramidale  = filter_var($_POST['piramidale'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
       $serie       = (int)($_POST['serie'] ?? 0);
@@ -1978,10 +1980,11 @@ try {
 
       // 1) Aggiorno voce (campi DETTA)
       $sql = "UPDATE SCHEDE_ESERCIZI_DETTA
-              SET ID_ESERCIZIO=?, ORDINE=?, NOTE=?
+              SET ID_ESERCIZIO=?, ORDINE=?, NOTE=?, SUPERSET=?
               WHERE ID_SCHEDAD=?";
       $stmt = $pdo->prepare($sql);
-      $stmt->execute([$idEsercizio, $ordine, $note, $idVoce]);
+      $stmt->execute([$idEsercizio, $ordine, $note, $superset, $idVoce]);
+
 
       // 2) Rimpiazzo le serie
       $pdo->prepare("DELETE FROM SCHEDE_ESERCIZI_DETTA_PESO WHERE ID_SCHEDAD=?")->execute([$idVoce]);
