@@ -2053,6 +2053,117 @@ try {
       break;
     }
 
+    case 'get_progress_history': {
+      $planId   = $_POST['plan_id']   ?? null;   // SCHEDE_TESTA.ID_SCHEDA
+      $clientId = $_POST['client_id'] ?? null;   // CLIENTI.ID
+      $from     = $_POST['from']      ?? null;   // 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS'
+      $to       = $_POST['to']        ?? null;
+
+      if (!$planId || !$clientId) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametri plan_id e client_id obbligatori']);
+        break;
+      }
+
+      $sql = "SELECT p.ID_SCHEDAD, p.ID_CLIENTE, p.DONE, p.D_AGG
+                FROM SCHEDE_PROGRESS p
+                JOIN SCHEDE_ESERCIZI_DETTA d ON d.ID_SCHEDAD = p.ID_SCHEDAD
+              WHERE d.ID_SCHEDA = ? AND p.ID_CLIENTE = ?";
+      $params = [(int)$planId, (int)$clientId];
+
+      if ($from) { $sql .= " AND p.D_AGG >= ?"; $params[] = $from; }
+      if ($to)   { $sql .= " AND p.D_AGG <= ?"; $params[] = $to;   }
+
+      $sql .= " ORDER BY p.D_AGG ASC, p.ID_SCHEDAD ASC";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute($params);
+      $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+      echo json_encode(['success'=>true, 'items'=>$rows]);
+      break;
+    }
+
+    case 'save_progress_session': {
+      $planId   = $_POST['plan_id']   ?? null;     // ID scheda testa
+      $clientId = $_POST['client_id'] ?? null;     // ID cliente
+      $doneJson = $_POST['done_ids']  ?? '[]';     // JSON array di ID_SCHEDAD completati
+      $when     = $_POST['when']      ?? null;     // opzionale: 'YYYY-MM-DD HH:MM:SS'
+      $doneIds  = json_decode($doneJson, true);
+
+      if (!$planId || !$clientId || !is_array($doneIds)) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametri plan_id, client_id e done_ids[] obbligatori']);
+        break;
+      }
+
+      // timestamp sessione coerente per tutte le righe
+      if (!$when) {
+        // SQLite: current_timestamp; MySQL: NOW()
+        $whenStmt = $pdo->query("SELECT datetime('now')");
+        $when = $whenStmt->fetchColumn();
+      }
+
+      try {
+        $pdo->beginTransaction();
+
+        $ins = $pdo->prepare("
+          INSERT INTO SCHEDE_PROGRESS (ID_SCHEDAD, ID_CLIENTE, DONE, D_AGG)
+          SELECT ?, ?, 1, ?
+          WHERE EXISTS (
+            SELECT 1 FROM SCHEDE_ESERCIZI_DETTA d
+            WHERE d.ID_SCHEDAD = ? AND d.ID_SCHEDA = ?
+          )
+        ");
+
+        foreach ($doneIds as $id) {
+          $id = (int)$id;
+          // la UNIQUE (ID_SCHEDAD, ID_CLIENTE, D_AGG) evita duplicati nella stessa sessione
+          $ins->execute([$id, (int)$clientId, $when, $id, (int)$planId]);
+        }
+
+        $pdo->commit();
+        echo json_encode(['success'=>true,'when'=>$when,'count'=>count($doneIds)]);
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(500);
+        echo json_encode(['success'=>false,'error'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'get_plans_last_sessions': {
+      $clientId = $_POST['client_id'] ?? null;
+      if (!$clientId) {
+        http_response_code(400);
+        echo json_encode(['success'=>false,'error'=>'Parametro client_id obbligatorio']);
+        break;
+      }
+
+      // schede attive ad oggi
+      $now = (new DateTime())->format('Y-m-d H:i:s');
+
+      $sql = "
+        SELECT t.ID_SCHEDA      AS plan_id,
+              t.TIPO_SCHEDA    AS tipo,
+              t.DATA_INIZIO    AS start_date,
+              t.VALIDITA_MESI  AS validita,
+              MAX(p.D_AGG)     AS last_exec
+          FROM SCHEDE_TESTA t
+    LEFT JOIN SCHEDE_ESERCIZI_DETTA d ON d.ID_SCHEDA = t.ID_SCHEDA
+    LEFT JOIN SCHEDE_PROGRESS p
+            ON p.ID_SCHEDAD = d.ID_SCHEDAD AND p.ID_CLIENTE = ?
+        WHERE t.ID_CLIENTE = ?
+          AND datetime(t.DATA_INIZIO) <= datetime(?)
+          AND datetime(t.DATA_INIZIO, printf('+%d months', ifnull(t.VALIDITA_MESI,2))) >= datetime(?)
+      GROUP BY t.ID_SCHEDA, t.TIPO_SCHEDA, t.DATA_INIZIO, t.VALIDITA_MESI
+      ORDER BY t.DATA_INIZIO ASC";
+      $stmt = $pdo->prepare($sql);
+      $stmt->execute([(int)$clientId, (int)$clientId, $now, $now]);
+      $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+      echo json_encode(['success'=>true, 'plans'=>$rows]);
+      break;
+    }
 
     /* =========================
      *     GRUPPI MUSCOLARI (globali)
