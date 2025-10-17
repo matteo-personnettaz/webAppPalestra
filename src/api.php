@@ -2111,14 +2111,14 @@ try {
           SELECT ?, ?, 1, ?
           WHERE EXISTS (
             SELECT 1 FROM SCHEDE_ESERCIZI_DETTA d
-            WHERE d.ID_SCHEDAD = ? AND d.ID_SCHEDA = ?
+            WHERE d.ID_SCHEDAD = ?
           )
         ");
 
         foreach ($doneIds as $id) {
           $id = (int)$id;
           // la UNIQUE (ID_SCHEDAD, ID_CLIENTE, D_AGG) evita duplicati nella stessa sessione
-          $ins->execute([$id, (int)$clientId, $when, $id, (int)$planId]);
+          $ins->execute([$id, (int)$clientId, $when, $id]);
         }
 
         $pdo->commit();
