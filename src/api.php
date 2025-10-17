@@ -2068,7 +2068,7 @@ try {
       $sql = "SELECT p.ID_SCHEDAD, p.ID_CLIENTE, p.DONE, p.D_AGG
                 FROM SCHEDE_PROGRESS p
                 JOIN SCHEDE_ESERCIZI_DETTA d ON d.ID_SCHEDAD = p.ID_SCHEDAD
-              WHERE d.ID_SCHEDA = ? AND p.ID_CLIENTE = ?";
+              WHERE d.ID_SCHEDAD = ? AND p.ID_CLIENTE = ?";
       $params = [(int)$planId, (int)$clientId];
 
       if ($from) { $sql .= " AND p.D_AGG >= ?"; $params[] = $from; }
@@ -2099,7 +2099,7 @@ try {
       // timestamp sessione coerente per tutte le righe
       if (!$when) {
         // SQLite: current_timestamp; MySQL: NOW()
-        $whenStmt = $pdo->query("SELECT datetime('now')");
+        $whenStmt = $pdo->query("SELECT NOW()");
         $when = $whenStmt->fetchColumn();
       }
 
@@ -2139,29 +2139,68 @@ try {
         break;
       }
 
-      // schede attive ad oggi
-      $now = (new DateTime())->format('Y-m-d H:i:s');
-
-      $sql = "
-        SELECT t.ID_SCHEDA      AS plan_id,
-              t.TIPO_SCHEDA    AS tipo,
-              t.DATA_INIZIO    AS start_date,
-              t.VALIDITA_MESI  AS validita,
-              MAX(p.D_AGG)     AS last_exec
-          FROM SCHEDE_TESTA t
-    LEFT JOIN SCHEDE_ESERCIZI_DETTA d ON d.ID_SCHEDA = t.ID_SCHEDA
-    LEFT JOIN SCHEDE_PROGRESS p
-            ON p.ID_SCHEDAD = d.ID_SCHEDAD AND p.ID_CLIENTE = ?
-        WHERE t.ID_CLIENTE = ?
-          AND datetime(t.DATA_INIZIO) <= datetime(?)
-          AND datetime(t.DATA_INIZIO, printf('+%d months', ifnull(t.VALIDITA_MESI,2))) >= datetime(?)
-      GROUP BY t.ID_SCHEDA, t.TIPO_SCHEDA, t.DATA_INIZIO, t.VALIDITA_MESI
-      ORDER BY t.DATA_INIZIO ASC";
+      // 1) Leggo le schede ATTIVE per il cliente, con ultima esecuzione per scheda
+      $sql = "SELECT tst.ID_SCHEDAT                               AS plan_id,
+                     tst.TIPO_SCHEDA                              AS tipo,
+                     tst.DATA_INIZIO                              AS start_date,
+                     tst.VALIDITA                                 AS validita,
+                     MAX(pro.D_AGG)                               AS last_exec
+        FROM SCHEDE_ESERCIZI_TESTA tst
+        LEFT JOIN SCHEDE_ESERCIZI_DETTA dtt
+              ON dtt.ID_SCHEDAT = tst.ID_SCHEDAT
+        LEFT JOIN SCHEDE_PROGRESS pro
+              ON pro.ID_SCHEDAD = dtt.ID_SCHEDAD
+              AND pro.ID_CLIENTE = ?
+        WHERE tst.ID_CLIENTE = ?
+          AND tst.DATA_INIZIO <= NOW()
+          AND DATE_ADD(tst.DATA_INIZIO, INTERVAL tst.VALIDITA MONTH) >= NOW()
+        GROUP BY tst.ID_SCHEDAT, tst.TIPO_SCHEDA, tst.DATA_INIZIO, tst.VALIDITA";
       $stmt = $pdo->prepare($sql);
-      $stmt->execute([(int)$clientId, (int)$clientId, $now, $now]);
-      $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+      $stmt->execute([(int)$clientId, (int)$clientId]);
+      $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-      echo json_encode(['success'=>true, 'plans'=>$rows]);
+      // 2) Ordino per TIPO_SCHEDA (A,B,C,...) con fallback su DATA_INIZIO
+      usort($rows, function($a, $b) {
+        $ta = strtoupper(trim((string)($a['tipo'] ?? '')));
+        $tb = strtoupper(trim((string)($b['tipo'] ?? '')));
+
+        $sa = ($ta !== '' && ctype_alpha($ta[0])) ? ord($ta[0]) - ord('A') : 999;
+        $sb = ($tb !== '' && ctype_alpha($tb[0])) ? ord($tb[0]) - ord('A') : 999;
+
+        if ($sa !== $sb) return $sa <=> $sb;
+        return strcmp((string)$a['start_date'], (string)$b['start_date']);
+      });
+
+      // 3) Trovo l’ultima esecuzione globale tra le schede attive
+      $lastRow = null;
+      foreach ($rows as $r) {
+        if (!empty($r['last_exec'])) {
+          if ($lastRow === null || (string)$r['last_exec'] > (string)$lastRow['last_exec']) {
+            $lastRow = $r;
+          }
+        }
+      }
+
+      // 4) Round-robin: se ho fatto A, propongo B; altrimenti la prima
+      $next = null;
+      $n = count($rows);
+      if ($n === 1) {
+        $next = $rows[0];
+      } elseif ($n > 1) {
+        if ($lastRow === null) {
+          // Nessuna esecuzione: inizio dalla prima
+          $next = $rows[0];
+        } else {
+          // Cerco l’indice della scheda usata per ultima
+          $idx = -1;
+          foreach ($rows as $i => $r) {
+            if ((int)$r['plan_id'] === (int)$lastRow['plan_id']) { $idx = $i; break; }
+          }
+          $next = ($idx === -1) ? $rows[0] : $rows[ ($idx + 1) % $n ];
+        }
+      }
+
+      echo json_encode(['success'=>true, 'plans'=>$rows, 'next_plan'=>$next]);
       break;
     }
 
