@@ -2057,7 +2057,6 @@ try {
       $planId     = $_POST['plan_id']     ?? null;   // SCHEDE_TESTA.ID_SCHEDAT (testata)
       $detailId   = $_POST['detail_id']   ?? null;   // SCHEDE_DETTA.ID_SCHEDAD (dettaglio) opzionale
       $clientId   = $_POST['client_id']   ?? null;   // CLIENTI.ID
-      $exerciseId = $_POST['exercise_id'] ?? null;   // ESERCIZI.ID (opzionale)
       $from       = $_POST['from']        ?? null;   // 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS' (opz.)
       $to         = $_POST['to']          ?? null;   // idem (opz.)
 
@@ -2076,10 +2075,10 @@ try {
           p.DONE,
           p.D_AGG,
           d.ID_SCHEDAT   AS plan_id,
-          d.ID_ESERCIZIO AS exercise_id
+          CONCAT(e.NOME,' [',e.SIGLA,']') as exercise_id
         FROM SCHEDE_PROGRESS p
-        JOIN SCHEDE_ESERCIZI_DETTA d
-          ON d.ID_SCHEDAD = p.ID_SCHEDAD
+        JOIN SCHEDE_ESERCIZI_DETTA d ON (d.ID_SCHEDAD = p.ID_SCHEDAD)
+        INNER JOIN ESERCIZI e ON (e.ID_ESERCIZIO=d.ID_ESERCIZIO)
         WHERE p.ID_CLIENTE = ?
       ";
       $params = [(int)$clientId];
