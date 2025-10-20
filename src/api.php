@@ -2055,8 +2055,9 @@ try {
 
     case 'get_progress_history': {
       $planId     = $_POST['plan_id']     ?? null;   // SCHEDE_TESTA.ID_SCHEDAT (testata)
-      $detailId   = $_POST['detail_id']   ?? null;   // SCHEDE_DETTA.ID_SCHEDAD (dettaglio) opzionale
+      $detailId   = $_POST['detail_id']   ?? null;   // SCHEDE_DETTA.ID_SCHEDAD (opzionale)
       $clientId   = $_POST['client_id']   ?? null;   // CLIENTI.ID
+      $exerciseId = $_POST['exercise_id'] ?? null;   // ESERCIZI.ID (opzionale)
       $from       = $_POST['from']        ?? null;   // 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS' (opz.)
       $to         = $_POST['to']          ?? null;   // idem (opz.)
 
@@ -2066,41 +2067,36 @@ try {
         break;
       }
 
-      // Base query: progressi (per cliente) uniti al dettaglio per risalire alla testata/esercizio
       $sql = "
         SELECT
-          p.ID_PROGRESSO,
-          p.ID_SCHEDAD,
-          p.ID_CLIENTE,
-          p.DONE,
-          p.D_AGG,
-          d.ID_SCHEDAT   AS plan_id,
-          CONCAT(e.NOME,' [',e.SIGLA,']') as exercise_id
+          p.ID_PROGRESSO                          AS id_progress,
+          p.ID_SCHEDAD                            AS detail_id,
+          p.ID_CLIENTE                            AS client_id,
+          p.DONE                                  AS done,
+          p.D_AGG                                 AS executed_at,
+          d.ID_SCHEDAT                            AS plan_id,
+          d.ID_ESERCIZIO                          AS exercise_id,
+          CONCAT(e.NOME, ' [', e.SIGLA, ']')      AS exercise_label
         FROM SCHEDE_PROGRESS p
-        JOIN SCHEDE_ESERCIZI_DETTA d ON (d.ID_SCHEDAD = p.ID_SCHEDAD)
-        INNER JOIN ESERCIZI e ON (e.ID_ESERCIZIO=d.ID_ESERCIZIO)
+        JOIN SCHEDE_ESERCIZI_DETTA d ON d.ID_SCHEDAD = p.ID_SCHEDAD
+        JOIN ESERCIZI e              ON e.ID_ESERCIZIO = d.ID_ESERCIZIO
         WHERE p.ID_CLIENTE = ?
       ";
       $params = [(int)$clientId];
 
-      // Se ho il dettaglio, è il filtro più specifico
       if ($detailId) {
         $sql .= " AND p.ID_SCHEDAD = ? ";
         $params[] = (int)$detailId;
       } else {
-        // Altrimenti filtro per TESTATA (è quello che passi come plan_id dal form)
         $sql .= " AND d.ID_SCHEDAT = ? ";
         $params[] = (int)$planId;
       }
 
-      if ($exerciseId) {
-        $sql .= " AND d.ID_ESERCIZIO = ? ";
-        $params[] = (int)$exerciseId;
-      }
-      if ($from) { $sql .= " AND p.D_AGG >= ?"; $params[] = $from; }
-      if ($to)   { $sql .= " AND p.D_AGG <= ?"; $params[] = $to;   }
+      if ($exerciseId) { $sql .= " AND d.ID_ESERCIZIO = ? "; $params[] = (int)$exerciseId; }
+      if ($from)       { $sql .= " AND p.D_AGG >= ? ";        $params[] = $from; }
+      if ($to)         { $sql .= " AND p.D_AGG <= ? ";        $params[] = $to;   }
 
-      $sql .= " ORDER BY p.D_AGG ASC, p.ID_SCHEDAD ASC";
+      $sql .= " ORDER BY p.D_AGG DESC, p.ID_SCHEDAD ASC ";
 
       $stmt = $pdo->prepare($sql);
       $stmt->execute($params);
@@ -2109,7 +2105,6 @@ try {
       echo json_encode(['success'=>true, 'items'=>$rows]);
       break;
     }
-
 
     case 'save_progress_session': {
       $planId   = $_POST['plan_id']   ?? null;     // ID scheda testa
