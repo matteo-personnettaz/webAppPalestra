@@ -1,6 +1,6 @@
 # ===== STAGE 1: dipendenze PHP con Composer =====
 # FROM composer:2 AS deps
-FROM composer:2.7-php8.3 AS deps
+FROM php:8.3-cli AS deps
 WORKDIR /app
 
 # Copio solo i file Composer per sfruttare la cache
