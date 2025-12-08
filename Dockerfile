@@ -1,6 +1,6 @@
 # ===== STAGE 1: dipendenze PHP con Composer =====
 # FROM composer:2 AS deps
-FROM php:8.3-cli AS deps
+FROM php:8.4-cli AS deps
 
 # Installa git, unzip, libzip e l'estensione PHP zip
 RUN apt-get update && apt-get install -y \
@@ -21,7 +21,7 @@ COPY src/composer.json src/composer.lock* ./
 RUN composer install --no-dev --prefer-dist --no-progress --no-interaction --optimize-autoloader
 
 # ===== STAGE 2: runtime PHP + Apache (AGGIORNATO A 8.3) =====
-FROM php:8.3-apache
+FROM php:8.4-apache
 
 # 1) Estensioni necessarie
 RUN apt-get update && apt-get install -y libzip-dev \
