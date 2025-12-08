@@ -41,7 +41,7 @@ function require_uid($auth): string {
   }
   try {
     $verified = $auth->verifyIdToken($m[1]);
-    return (string)$verified->claims()->get('sub'); // FirebaseUID
+    return (string)$verified->claims()->get('sub'); //FirebaseUID
   } catch (Throwable $e) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Invalid token: ' . $e->getMessage()]);
