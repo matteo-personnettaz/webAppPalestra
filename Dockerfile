@@ -2,6 +2,13 @@
 # FROM composer:2 AS deps
 FROM php:8.3-cli AS deps
 
+# Installa git, unzip, libzip e l'estensione PHP zip
+RUN apt-get update && apt-get install -y \
+        git \
+        unzip \
+        libzip-dev \
+    && docker-php-ext-install zip
+
 # Installa Composer (versione stabile)
 RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
     && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
