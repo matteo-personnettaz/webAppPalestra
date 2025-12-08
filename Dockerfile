@@ -1,6 +1,12 @@
 # ===== STAGE 1: dipendenze PHP con Composer =====
 # FROM composer:2 AS deps
 FROM php:8.3-cli AS deps
+
+# Installa Composer (versione stabile)
+RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
+    && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
+    && rm composer-setup.php
+
 WORKDIR /app
 
 # Copio solo i file Composer per sfruttare la cache
