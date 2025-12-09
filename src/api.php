@@ -1760,102 +1760,147 @@ try {
     *   SCHEDE ESERCIZI (DETTA)
     * ========================= */
     case 'get_voci_scheda': {
-      $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
-      if (!$idScheda) { http_response_code(400); echo json_encode(['success'=>false,'error'=>'ID_SCHEDAT mancante']); break; }
+    $idScheda = (int)($_GET['id_scheda'] ?? $_POST['id_scheda'] ?? 0);
+    if (!$idScheda) {
+      http_response_code(400);
+      echo json_encode([
+        'success' => false,
+        'error'   => 'ID_SCHEDAT mancante',
+      ]);
+      break;
+    }
 
-      if (!$isAdmin) {
-        $own = $pdo->prepare("
-          SELECT 1
-          FROM SCHEDE_ESERCIZI_TESTA st
-          JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
-          WHERE st.ID_SCHEDAT=? AND c.UID=?");
-        $own->execute([$idScheda, $uid]);
-        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda Testa or UID not found']); break; }
-      } else {
-        $own = $pdo->prepare("
-          SELECT 1
-          FROM SCHEDE_ESERCIZI_TESTA st
-          JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = st.ID_CLIENTE
-          WHERE st.ID_SCHEDAT=? AND ac.ADMIN_UID=?");
-        $own->execute([$idScheda, $uid]);
-        if (!$own->fetch()) { http_response_code(404); echo json_encode(['success'=>false,'error'=>'Scheda non assegnata']); break; }
-      }
-
-      // 1) Voci della scheda
-      $stmt = $pdo->prepare("
-        SELECT sd.*
-        FROM SCHEDE_ESERCIZI_DETTA sd
-        WHERE sd.ID_SCHEDAT=?
-        ORDER BY sd.ORDINE
+    // --- 0) Verifica appartenenza scheda all'utente / admin ---
+    if (!$isAdmin) {
+      $own = $pdo->prepare("
+        SELECT 1
+        FROM SCHEDE_ESERCIZI_TESTA st
+        JOIN CLIENTI c ON c.ID_CLIENTE = st.ID_CLIENTE
+        WHERE st.ID_SCHEDAT = ? AND c.UID = ?
       ");
-      $stmt->execute([$idScheda]);
-      $voci = $stmt->fetchAll(PDO::FETCH_ASSOC);
+      $own->execute([$idScheda, $uid]);
+      if (!$own->fetch()) {
+        http_response_code(404);
+        echo json_encode([
+          'success' => false,
+          'error'   => 'Scheda Testa or UID not found',
+        ]);
+        break;
+      }
+    } else {
+      $own = $pdo->prepare("
+        SELECT 1
+        FROM SCHEDE_ESERCIZI_TESTA st
+        JOIN ADMIN_CLIENTI ac ON ac.ID_CLIENTE = st.ID_CLIENTE
+        WHERE st.ID_SCHEDAT = ? AND ac.ADMIN_UID = ?
+      ");
+      $own->execute([$idScheda, $uid]);
+      if (!$own->fetch()) {
+        http_response_code(404);
+        echo json_encode([
+          'success' => false,
+          'error'   => 'Scheda non assegnata',
+        ]);
+        break;
+      }
+    }
 
-      if (!$voci) { echo json_encode(['success'=>true,'data'=>[]]); break; }
+    // --- 1) Voci della scheda (DETTAGLIO) ---
+    $stmt = $pdo->prepare("
+      SELECT sd.*
+      FROM SCHEDE_ESERCIZI_DETTA sd
+      WHERE sd.ID_SCHEDAT = ?
+      ORDER BY sd.ORDINE
+    ");
+    $stmt->execute([$idScheda]);
+    $voci = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-      // 2) Serie per le voci trovate
-      $ids = array_column($voci, 'ID_SCHEDAD');
+    if (!$voci) {
+      echo json_encode(['success' => true, 'data' => []], JSON_UNESCAPED_UNICODE);
+      break;
+    }
+
+    // --- 2) Serie/pesi per le voci trovate (tabella figlia) ---
+    $ids = array_column($voci, 'ID_SCHEDAD');
+    $righe = [];
+
+    if (!empty($ids)) {
       $in  = implode(',', array_fill(0, count($ids), '?'));
-      $s2 = $pdo->prepare("
-        SELECT ID_SCHEDAD, SERIE, RIPETIZIONI, PESO,
-              TECNICA_INTENSITA
+      $s2  = $pdo->prepare("
+        SELECT ID_SCHEDAD, SERIE, RIPETIZIONI, PESO, TECNICA_INTENSITA
         FROM SCHEDE_ESERCIZI_DETTA_PESO
         WHERE ID_SCHEDAD IN ($in)
         ORDER BY ID_SCHEDAD, SERIE
       ");
       $s2->execute($ids);
       $righe = $s2->fetchAll(PDO::FETCH_ASSOC);
-
-      $map = [];
-      foreach ($righe as $r) {
-        $map[$r['ID_SCHEDAD']][] = [
-          'serie'              => (int)$r['SERIE'],
-          'ripetizioni'        => (int)$r['RIPETIZIONI'],
-          'peso'               => isset($r['PESO']) ? (float)$r['PESO'] : null,
-          // chiave nuova: tecnica_intensita (compat in lettura con eventuali client vecchi che cercavano "note")
-          'tecnica_intensita'  => ($r['TECNICA_INTENSITA'] ?? null),
-        ];
-      }
-
-      // 3) Output coerente con vecchia sintassi (+ estensione piramidale)
-      $out = [];
-      foreach ($voci as $v) {
-        $serieList = $map[$v['ID_SCHEDAD']] ?? [];
-
-        if (count($serieList) == 0) {
-          // Nessuna riga peso: mantieni compatibilità
-          $out[] = array_merge($v, [
-            'piramidale'   => false,
-            'serie'        => 0,
-            'ripetizioni'  => 0,
-            'peso'         => null,
-            'elenco_serie' => [],
-          ]);
-        } else if (count($serieList) == 1) {
-          // NON piramidale con una sola riga → tieni anche elenco_serie[0] (così rientra tecnica_intensita)
-          $s = $serieList[0];
-          $out[] = array_merge($v, [
-            'piramidale'   => false,
-            'serie'        => (int)$s['serie'],
-            'ripetizioni'  => (int)$s['ripetizioni'],
-            'peso'         => isset($s['peso']) ? (float)$s['peso'] : null,
-            'elenco_serie' => [$s], // <-- IMPORTANTE: ora rientra tecnica_intensita
-          ]);
-        } else {
-          // piramidale
-          $out[] = array_merge($v, [
-            'piramidale'   => true,
-            'serie'        => 0,
-            'ripetizioni'  => 0,
-            'peso'         => null,
-            'elenco_serie' => $serieList,
-          ]);
-        }
-      }
-
-      echo json_encode(['success'=>true,'data'=>$out], JSON_UNESCAPED_UNICODE);
-      break;
     }
+
+    // Mappa ID_SCHEDAD → array di serie
+    $map = [];
+    foreach ($righe as $r) {
+      $idDett = (int)$r['ID_SCHEDAD'];
+      if (!isset($map[$idDett])) {
+        $map[$idDett] = [];
+      }
+      $map[$idDett][] = [
+        'serie'             => (int)$r['SERIE'],
+        'ripetizioni'       => (int)$r['RIPETIZIONI'],
+        'peso'              => isset($r['PESO']) ? (float)$r['PESO'] : null,
+        // nuova chiave "tecnica_intensita" (compat con eventuali vecchi client che usavano "note")
+        'tecnica_intensita' => ($r['TECNICA_INTENSITA'] ?? null),
+      ];
+    }
+
+    // --- 3) Costruzione output coerente con vecchia sintassi + estensione piramidale ---
+    $out = [];
+    foreach ($voci as $v) {
+      $idDett    = (int)$v['ID_SCHEDAD'];
+      $serieList = $map[$idDett] ?? [];
+
+      // Normalizzazione di alcuni campi base (opzionale, ma utile)
+      $v['ID_SCHEDAD']  = $idDett;
+      $v['ID_SCHEDAT']  = (int)$v['ID_SCHEDAT'];
+      $v['ID_ESERCIZIO']= (int)$v['ID_ESERCIZIO'];
+      $v['SUPERSET']    = isset($v['SUPERSET']) ? (int)$v['SUPERSET'] : 0;
+      if (array_key_exists('REST', $v) && $v['REST'] !== null) {
+        $v['REST'] = (int)$v['REST'];
+      }
+
+      if (count($serieList) === 0) {
+        // Nessuna riga peso: compat → niente serie, niente peso
+        $out[] = array_merge($v, [
+          'piramidale'   => false,
+          'serie'        => 0,
+          'ripetizioni'  => 0,
+          'peso'         => null,
+          'elenco_serie' => [],
+        ]);
+      } elseif (count($serieList) === 1) {
+        // NON piramidale con una sola riga
+        $s = $serieList[0];
+        $out[] = array_merge($v, [
+          'piramidale'   => false,
+          'serie'        => (int)$s['serie'],
+          'ripetizioni'  => (int)$s['ripetizioni'],
+          'peso'         => isset($s['peso']) ? (float)$s['peso'] : null,
+          'elenco_serie' => [$s],   // così rientra anche tecnica_intensita
+        ]);
+      } else {
+        // PIRAMIDALE: mantieni solo elenco_serie, lasciando serie/peso "compressi" a 0/null
+        $out[] = array_merge($v, [
+          'piramidale'   => true,
+          'serie'        => 0,
+          'ripetizioni'  => 0,
+          'peso'         => null,
+          'elenco_serie' => $serieList,
+        ]);
+      }
+    }
+
+    echo json_encode(['success' => true, 'data' => $out], JSON_UNESCAPED_UNICODE);
+    break;
+  }
 
 
    case 'insert_voce_scheda': {
